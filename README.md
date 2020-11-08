@@ -8,7 +8,7 @@ Fastai community entry to [2020 Reproducibility Challenge](https://paperswithcod
 
 ## Resources
 
-### Authors Resources
+### Author's Resources
 - [Reformer Paper](https://openreview.net/pdf?id=rkgNKkHtvB)
 - [Authors ICLR video](https://iclr.cc/virtual_2020/poster_rkgNKkHtvB.html)
 - [Google Blog](https://ai.googleblog.com/2020/01/reformer-efficient-transformer.html)
