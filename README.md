@@ -29,6 +29,7 @@ Fastai community entry to [2020 Reproducibility Challenge](https://paperswithcod
     - Train: 89,621,832
     - Eval: 5,000,000
     - Test: 5,000,000
+- [enwik8 notebook Tensor2Tensor](https://github.com/morganmcg1/reformer-fastai/blob/main/enwiki8_Tensor2Tensor_download.ipynb)
 
 ### Explainers
 - [Yannic K explainer](https://www.youtube.com/watch?v=i4H0kjxrias&t=1s)
