@@ -13,6 +13,7 @@ Fastai community entry to [2020 Reproducibility Challenge](https://paperswithcod
 - [Authors ICLR video](https://iclr.cc/virtual_2020/poster_rkgNKkHtvB.html)
 - [Google Blog](https://ai.googleblog.com/2020/01/reformer-efficient-transformer.html)
 - [Authors code (TRAX)](https://github.com/google/trax/tree/master/trax/models/reformer)
+- [Reformer model and training config](https://github.com/google/trax/blob/f8024e8057599b92fce82842f342cb3d39c8f405/trax/supervised/configs/reformer_enwik8.gin)
 
 ### Code
 - [@lucidrain’s Reformer code](https://github.com/lucidrains/reformer-pytorch/)
