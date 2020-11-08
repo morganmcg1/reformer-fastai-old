@@ -22,6 +22,13 @@ Fastai community entry to [2020 Reproducibility Challenge](https://paperswithcod
 - [HuggingFace: long sequences](https://colab.research.google.com/github/patrickvonplaten/notebooks/blob/master/PyTorch_Reformer.ipynb)
 - [HuggingFace: Pretraining](https://colab.research.google.com/drive/1tzzh0i8PgDQGV3SMFUGxM7_gGae3K-uW?usp=sharing)
 
+### Data
+**enwik8**
+- [enwik8.zip, raw data, 100mb](http://mattmahoney.net/dc/enwik8.zip)
+- [Tensor2Tensor enwik8 data generator code, with train/dev/test split](https://github.com/tensorflow/tensor2tensor/blob/master/tensor2tensor/data_generators/enwik8.py). File lengths:
+    - Train: 89,621,832
+    - Eval: 5,000,000
+    - Test: 5,000,000
 
 ### Explainers
 - [Yannic K explainer](https://www.youtube.com/watch?v=i4H0kjxrias&t=1s)
