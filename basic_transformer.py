@@ -262,6 +262,7 @@ class TransformerEncDec(nn.Module):
         * pad_idx: int - padding token id, if pad_idx is provided, and no mask/context_mask are passed to 
                 forward method will be used to generate padding masks
         * tie_weights: bool - if True target embedding weights are used for computation output projection
+        * pos_enc: str from {'absolute', 'fixed', 'axial'} - type positional encoding to use
     Inputs:
         * src - source input ids, shape [bs, src_sl]
         * tgt - target input ids, shape [bs, tgt_sl]
@@ -271,14 +272,16 @@ class TransformerEncDec(nn.Module):
         * logits - target token logits, shape [bs, tgt_sl, tgt_vocab_sz]
     """
     def __init__(self, enc_vocab_sz, dec_vocab_sz, dim, depth=6, heads=8, 
-                 max_seq_len=512, pad_idx=None, tie_weights=False):
+                 max_seq_len=512, pad_idx=None, tie_weights=False, 
+                 attn_dropout=0.1, ff_dropout=0.1, emb_dropout=0.1,
+                 pos_enc='absolute'):
         super().__init__()
         self.max_seq_len = max_seq_len
         self.pad_idx = pad_idx
-        self.enc_emb = TransformerEmbedding(enc_vocab_sz, dim, max_seq_len)
-        self.dec_emb = TransformerEmbedding(dec_vocab_sz, dim, max_seq_len)
-        self.encoder = TransformerEncoder(dim, depth, heads)
-        self.decoder = TransformerDecoder(dim, depth, heads)
+        self.enc_emb = TransformerEmbedding(enc_vocab_sz, dim, max_seq_len, dropout=emb_dropout)
+        self.dec_emb = TransformerEmbedding(dec_vocab_sz, dim, max_seq_len, dropout=emb_dropout)
+        self.encoder = TransformerEncoder(dim, depth, heads, attn_dropout=attn_dropout, ff_dropout=ff_dropout)
+        self.decoder = TransformerDecoder(dim, depth, heads, attn_dropout=attn_dropout, ff_dropout=ff_dropout)
         self.proj = nn.Linear(dim, dec_vocab_sz)
         if tie_weights: self.proj.weight = self.emb.emb.weight
 
@@ -303,6 +306,7 @@ class TransformerLM(nn.Module):
         * causal: bool (default: True) - if True does causal masking automatically
         * max_seq_len: int (default: 512)
         * tie_weights: bool - if True target embedding weights are used for computation output projection
+        * pos_enc: str from {'absolute', 'fixed', 'axial'} - type positional encoding to use
     Inputs:
         * x - input ids, shape [bs, sl]
         * mask - optional boolean mask, shape [bs, sl]
@@ -311,7 +315,8 @@ class TransformerLM(nn.Module):
     """
     def __init__(self, vocab_sz, dim, depth=6, heads=8, causal=True,
                  max_seq_len=512, tie_weights=False,
-                 attn_dropout=0.1, ff_dropout=0.1, emb_dropout=0.1):
+                 attn_dropout=0.1, ff_dropout=0.1, emb_dropout=0.1,
+                 pos_enc='absolute'):
         super().__init__()
         self.max_seq_len = max_seq_len
         self.emb = TransformerEmbedding(vocab_sz, dim, max_seq_len, dropout=emb_dropout)
