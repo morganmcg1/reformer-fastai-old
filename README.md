@@ -35,6 +35,7 @@ Fastai community entry to [2020 Reproducibility Challenge](https://paperswithcod
 - [Yannic K explainer](https://www.youtube.com/watch?v=i4H0kjxrias&t=1s)
 - [HuggingFace blog post](https://huggingface.co/blog/reformer)
 - [Illustrating the Reformer blog post](https://towardsdatascience.com/illustrating-the-reformer-393575ac6ba0)
+- [Reformer Deep Dive](https://www.pragmatic.ml/reformer-deep-dive/)
 
 ### Related
 - [Coursera Attention Models in NLP course, with Reformer co-author](https://www.coursera.org/learn/attention-models-in-nlp)
