@@ -1,6 +1,5 @@
 # credits to @lucidrains https://github.com/lucidrains
 
-import math
 import torch
 from torch import nn, einsum
 import torch.nn.functional as F
@@ -76,9 +75,11 @@ class Attention(nn.Module):
                  heads = 8, 
                  causal = False,
                  mask = None,
-                 dropout=0.1):
+                 dropout=0.1,
+                 store_attention=False):
         super().__init__()
         self.causal = causal
+        self.store_attention = store_attention
         self.mask = mask #??
         self.heads = heads
         self.scale = dim ** -0.5
@@ -120,12 +121,15 @@ class Attention(nn.Module):
             del mask
 
         attn = F.softmax(dots, -1)
-        attn = self.dropout(attn)
+        attn_ = self.dropout(attn) #? to return attention before dropout
 
-        out = torch.einsum('bhij,bhjd->bhid', attn, v)
+        out = torch.einsum('bhij,bhjd->bhid', attn_, v)
         out = rearrange(out, 'b h n d -> b n (h d)')
         out =  self.to_out(out)
         #out = self.dropout(out) # option for more dropout here
+        #TODO store or return atteention matrix
+        # if self.store_attention:
+        #     return out, attn
         return out
 
 
@@ -193,6 +197,7 @@ class TransformerDecoder(nn.Module):
 
 """### Models"""
 # from https://github.com/lucidrains/reformer-pytorch/blob/master/reformer_pytorch/reformer_pytorch.py#L609
+
 class AbsolutePositionalEmbedding(nn.Module):
     def __init__(self, dim, max_seq_len):
         super().__init__()
@@ -214,6 +219,7 @@ class FixedPositionalEmbedding(nn.Module):
         emb = torch.cat((sinusoid_inp.sin(), sinusoid_inp.cos()), dim=-1)
         return emb[None, :, :]
 #TODO add axial positional encodings
+
 class TransformerEmbedding(nn.Module):
     """
     Combines token embedings with positional encodings
@@ -245,7 +251,7 @@ class TransformerEmbedding(nn.Module):
 # Lucidrains does it with custom MatrixMultiply module https://github.com/lucidrains/reformer-pytorch/blob/master/reformer_pytorch/reformer_pytorch.py#L106
 class TransformerEncDec(nn.Module):
     """
-    Basic Transformer Encoder-Decoder module
+    Basic Transformer Encoder-Decoder model
     Parameters:
         * enc_vocab_sz: int - source vocab size 
         * dec_vocab_sz: int - target vocab size
@@ -288,7 +294,7 @@ class TransformerEncDec(nn.Module):
 
 class TransformerLM(nn.Module):
     """
-    Basic Transformer Encoder-Decoder module
+    Basic Transformer for language modelling
     Parameters:
         * vocab_sz: int
         * dim: int - inner dimension of the model
