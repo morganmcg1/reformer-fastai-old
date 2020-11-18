@@ -18,6 +18,38 @@ def default(val, d):
         return val
     return d() if isfunction(d) else d
 
+def expand_dim1(x):
+    if len(x.shape) == 1:
+        return x[None, :]
+    else: return x
+
+# generative helpers
+# credit https://github.com/huggingface/transformers/blob/a0c62d249303a68f5336e3f9a96ecf9241d7abbe/src/transformers/generation_logits_process.py
+def top_p_filter(logits, top_p=0.9):
+    sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+    cum_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+
+    sorted_indices_to_remove = cum_probs > top_p
+    sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+    sorted_indices_to_remove[..., 0] = 0
+    # if min_tokens_to_keep > 1:
+    #         # Keep at least min_tokens_to_keep (set to min_tokens_to_keep-1 because we add the first one below)
+    #         sorted_indices_to_remove[..., : min_tokens_to_keep - 1] = 0
+    indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+    scores[indices_to_remove] = float('-inf')
+    return scores
+
+def top_k_filter(logits, top_k=20):
+    indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
+    logits[indices_to_remove] = float('-inf')
+    return logits
+
+_sampler = {
+    'top_k':top_k_filter,
+    'top_p':top_p_filter,
+    'gready':lambda x: x.argmax(-1)
+}
+
 """## Helpers and FeedForward"""
 
 # helper classes 
@@ -294,6 +326,43 @@ class TransformerEncDec(nn.Module):
     def get_padding_mask(self, x):
         if self.pad_idx is None: return None
         return (x != self.pad_idx)
+    #TODO add beam search and refactor
+    #not tested
+    @torch.no_grad()
+    def generate(self, inp, 
+                context_inp,
+                max_len=50,
+                temperature=1.,
+                method = 'top_k',
+                top_k = 20,
+                top_p = 0.9,
+                early_stopping=False):
+        self.to(inp.device) #TODO test for potential problems
+        self.eval()
+        thresh = top_k if method=='top_k' else top_p
+        sampler = _sampler[method]
+        inp = expand_dim1(inp)
+        context_inp = expand_dim1(context_inp)
+        b, t = inp.shape
+        enc = self.encoder(self.enc_emb(context_inp), mask = src_mask)
+        out = inp
+        for _ in range(max_len):
+            x = out[:, -self.max_seq_len:]
+            dec = self.decoder(self.dec_emb(tgt), context=enc)
+            logits = self.proj(dec)[:, -1, :]
+            if method == 'greedy':
+                sample = sampler(logits)
+            else:
+                filtered_logits = sampler(logits)
+                probs = F.softmax(filtered_logits / temperature, dim=-1)
+                sample = torch.multinomial(probs, 1)
+
+            out = torch.cat((out, sample), dim=-1)
+
+            if early_stopping and (sample == bte.eos_token_id).all():
+                break
+        # out = out[:, t:]
+        return out
 
 class TransformerLM(nn.Module):
     """
@@ -330,3 +399,36 @@ class TransformerLM(nn.Module):
         x = self.emb(x)
         x = self.tfmr(x, mask=mask)
         return self.proj(x)
+    #TODO maybe refactor
+    @torch.no_grad()
+    def generate(self, inp,
+                max_len=50,
+                temperature=1.,
+                method = 'top_k',
+                top_k = 20,
+                top_p = 0.9,
+                early_stopping=False):
+        self.to(inp.device) #TODO test for potential problems
+        self.eval()
+        thresh = top_k if method=='top_k' else top_p
+        sampler = _sampler[method]
+        inp = expand_dim1(inp)
+        b, t = inp.shape
+        out = inp
+        for _ in range(max_len):
+            x = out[:, -self.max_seq_len:]
+
+            logits = self(x)[:, -1, :]
+            if method == 'greedy':
+                sample = sampler(logits)
+            else:
+                filtered_logits = sampler(logits)
+                probs = F.softmax(filtered_logits / temperature, dim=-1)
+                sample = torch.multinomial(probs, 1)
+
+            out = torch.cat((out, sample), dim=-1)
+
+            if early_stopping and (sample == bte.eos_token_id).all():
+                break
+        # out = out[:, t:]
+        return out
