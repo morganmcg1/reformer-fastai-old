@@ -239,7 +239,7 @@ class TransformerEmbedding(nn.Module):
     def forward(self, x):
         _, n = x.shape
         x = self.emb(x)
-        x += self.pos_enc(torch.arange(n, device=x.device))
+        x += self.pos_enc(x)
         return self.dropout(x)
     def _init(self):
         nn.init.normal_(self.emb.weight, std = 0.02)
@@ -262,7 +262,7 @@ class TransformerEncDec(nn.Module):
         * pad_idx: int - padding token id, if pad_idx is provided, and no mask/context_mask are passed to 
                 forward method will be used to generate padding masks
         * tie_weights: bool - if True target embedding weights are used for computation output projection
-        * pos_enc: str from {'absolute', 'fixed', 'axial'} - type positional encoding to use
+        * pos_enc: str from {'absolute', 'fixed', 'axial'} - type of positional encoding to use
     Inputs:
         * src - source input ids, shape [bs, src_sl]
         * tgt - target input ids, shape [bs, tgt_sl]
@@ -306,7 +306,7 @@ class TransformerLM(nn.Module):
         * causal: bool (default: True) - if True does causal masking automatically
         * max_seq_len: int (default: 512)
         * tie_weights: bool - if True target embedding weights are used for computation output projection
-        * pos_enc: str from {'absolute', 'fixed', 'axial'} - type positional encoding to use
+        * pos_enc: str from {'absolute', 'fixed', 'axial'} - type of positional encoding to use
     Inputs:
         * x - input ids, shape [bs, sl]
         * mask - optional boolean mask, shape [bs, sl]
