@@ -257,11 +257,12 @@ class TransformerEmbedding(nn.Module):
     """
     def __init__(self, emb_sz, dim, max_seq_len=512, dropout=0., pos_enc='absolute'):
         super().__init__()
+        self.scale = dim**0.5
         self.emb = nn.Embedding(emb_sz, dim)
         if pos_enc == 'absolute':
             self.pos_enc = AbsolutePositionalEmbedding(dim, max_seq_len)
         elif pos_enc == 'fixed':
-            self.FixedPositionalEmbedding(dim)
+            self.pos_enc = FixedPositionalEmbedding(dim)
         elif pos_enc == 'axial':
             raise NotImplementedError
         self.dropout = nn.Dropout(dropout)
@@ -269,11 +270,12 @@ class TransformerEmbedding(nn.Module):
     def forward(self, x):
         _, n = x.shape
         x = self.emb(x)
+        x *= self.scale
         x += self.pos_enc(x)
         return self.dropout(x)
     def _init(self):
         nn.init.normal_(self.emb.weight, std = 0.02)
-        if getattr(self.pos_enc, 'weight', None):
+        if hasattr(self.pos_enc, 'weight'):
             nn.init.normal_(self.pos_enc.weight, std = 0.02)
 
 #TODO test weight tying
@@ -302,7 +304,7 @@ class TransformerEncDec(nn.Module):
         * logits - target token logits, shape [bs, tgt_sl, tgt_vocab_sz]
     """
     def __init__(self, enc_vocab_sz, dec_vocab_sz, dim, depth=6, heads=8, 
-                 max_seq_len=512, pad_idx=None, tie_weights=False, 
+                 max_seq_len=512, pad_idx=None, tie_weights=True, 
                  attn_dropout=0.1, ff_dropout=0.1, emb_dropout=0.1,
                  pos_enc='absolute'):
         super().__init__()
@@ -381,7 +383,7 @@ class TransformerLM(nn.Module):
         * logits - target token logits, shape [bs, sl, vocab_sz]
     """
     def __init__(self, vocab_sz, dim, depth=6, heads=8, causal=True,
-                 max_seq_len=512, tie_weights=False,
+                 max_seq_len=512, tie_weights=True,
                  attn_dropout=0.1, ff_dropout=0.1, emb_dropout=0.1,
                  pos_enc='absolute'):
         super().__init__()
@@ -433,7 +435,7 @@ class TransformerLM(nn.Module):
     # wip
     def store_attention(self):
         for m in self.modules():
-            if if issubclass(type(m), Attention):
+            if issubclass(type(m), Attention):
                 m.store_attention = True
     def get_attention_matrix(self):
         res = []
