@@ -155,7 +155,7 @@ class Attention(nn.Module):
         if self.store_attention: # and not self.training
             self.attention = attn.detach().cpu()
         attn = self.dropout(attn)
-        
+
         out = torch.einsum('bhij,bhjd->bhid', attn, v)
         out = rearrange(out, 'b h n d -> b n (h d)')
         out =  self.to_out(out)
@@ -433,7 +433,7 @@ class TransformerLM(nn.Module):
     # wip
     def store_attention(self):
         for m in self.modules():
-            if hasattr(m, 'store_attention'):
+            if if issubclass(type(m), Attention):
                 m.store_attention = True
     def get_attention_matrix(self):
         res = []
