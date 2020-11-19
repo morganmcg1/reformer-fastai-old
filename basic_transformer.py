@@ -107,11 +107,10 @@ class Attention(nn.Module):
                  heads = 8, 
                  causal = False,
                  mask = None,
-                 dropout=0.1,
-                 store_attention=False):
+                 dropout=0.1):
         super().__init__()
         self.causal = causal
-        self.store_attention = store_attention
+        self.store_attention = False
         self.mask = mask #??
         self.heads = heads
         self.scale = dim ** -0.5
@@ -122,7 +121,7 @@ class Attention(nn.Module):
 
         self.to_out = nn.Linear(dim, dim)
 
-    def forward(self, x, context = None, mask = None, context_mask = None):
+    def forward(self, x, context = None, mask = None, context_mask = None, store_attention=False):
         b, n, _, h, device = *x.shape, self.heads, x.device
         kv_input = default(context, x)
 
@@ -153,15 +152,14 @@ class Attention(nn.Module):
             del mask
 
         attn = F.softmax(dots, -1)
-        attn_ = self.dropout(attn) #? to return attention before dropout
-
-        out = torch.einsum('bhij,bhjd->bhid', attn_, v)
+        if self.store_attention: # and not self.training
+            self.attention = attn.detach().cpu()
+        attn = self.dropout(attn)
+        
+        out = torch.einsum('bhij,bhjd->bhid', attn, v)
         out = rearrange(out, 'b h n d -> b n (h d)')
         out =  self.to_out(out)
         #out = self.dropout(out) # option for more dropout here
-        #TODO store or return atteention matrix
-        # if self.store_attention:
-        #     return out, attn
         return out
 
 
@@ -177,7 +175,7 @@ class TransformerEncoderBlock(nn.Module):
     def __init__(self, dim, heads = 8, causal = False, mask = None, 
                  attn_dropout=0.1, ff_dropout=0.1):
         super().__init__()
-        self.attn = Residual(PreNorm(dim, Attention(dim, causal=causal, dropout=attn_dropout)))
+        self.attn = Residual(PreNorm(dim, Attention(dim, heads=heads, causal=causal, dropout=attn_dropout)))
         self.ff = Residual(PreNorm(dim, FeedForward(dim, dropout=ff_dropout)))
     def forward(self, x, mask=None): #? more args
         out = self.attn(x, mask=mask)
@@ -205,8 +203,8 @@ class TransformerDecoderBlock(nn.Module):
     def __init__(self, dim, heads = 8, mask = None, 
                  attn_dropout=0.1, ff_dropout=0.1):
         super().__init__()
-        self.attn = Residual(PreNorm(dim, Attention(dim, causal=True, dropout=attn_dropout)))
-        self.cross = Residual(PreNorm(dim, Attention(dim, causal=False, dropout=attn_dropout)))
+        self.attn = Residual(PreNorm(dim, Attention(dim, heads=heads, causal=True, dropout=attn_dropout)))
+        self.cross = Residual(PreNorm(dim, Attention(dim, heads=heads, causal=False, dropout=attn_dropout)))
         self.ff = Residual(PreNorm(dim, FeedForward(dim, dropout=ff_dropout)))
 
     def forward(self, x, context, mask=None, context_mask=None):
@@ -432,3 +430,18 @@ class TransformerLM(nn.Module):
                 break
         # out = out[:, t:]
         return out
+    # wip
+    def store_attention(self):
+        for m in self.modules():
+            if hasattr(m, 'store_attention'):
+                m.store_attention = True
+    def get_attention_matrix(self):
+        res = []
+        for m in self.modules():
+            if issubclass(type(m), Attention):
+                attention = getattr(m, 'attention', None)
+                res.append(attention)
+                # reset stored attention
+                m.attention = None
+                m.store_attention = False
+        return res
