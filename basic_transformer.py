@@ -174,22 +174,27 @@ class TransformerEncoderBlock(nn.Module):
     Bacis transformer encoder block. Consists of multi-head attention and positional feedforward layers
     """
     def __init__(self, dim, heads = 8, causal = False, mask = None, 
-                 attn_dropout=0.1, ff_dropout=0.1, d_ff=None):
+                 attn_dropout=0.1, ff_dropout=0.1, d_ff=None, prenorm=False):
         super().__init__()
-        self.attn = Residual(PreNorm(dim, Attention(dim, heads=heads, causal=causal, dropout=attn_dropout)))
-        self.ff = Residual(PreNorm(dim, FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
+        if prenorm:
+            self.attn = Residual(PreNorm(dim, Attention(dim, heads=heads, causal=causal, dropout=attn_dropout)))
+            self.ff = Residual(PreNorm(dim, FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
+        else:
+            self.attn = Residual(PostNorm(dim, Attention(dim, heads=heads, causal=causal, dropout=attn_dropout)))
+            self.ff = Residual(PostNorm(dim, FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
     def forward(self, x, mask=None): #? more args
         out = self.attn(x, mask=mask)
         out = self.ff(out)
         return out
 
 class TransformerEncoder(nn.Module):
-    def __init__(self, dim, depth=6, heads=8, causal=False, d_ff=None, attn_dropout=0.1, ff_dropout=0.1):
+    def __init__(self, dim, depth=6, heads=8, causal=False, d_ff=None, attn_dropout=0.1, ff_dropout=0.1, prenorm=False):
         super().__init__()
         self.dim = dim
         self.layers = nn.ModuleList([])
         for _ in range(depth):
-            self.layers.append(TransformerEncoderBlock(dim, heads, causal=causal, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout))
+            self.layers.append(TransformerEncoderBlock(dim, heads, causal=causal, d_ff=d_ff, 
+                                    attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm))
     def forward(self, x, mask=None):
         for layer in self.layers:
             x = layer(x, mask=mask)
@@ -202,12 +207,16 @@ class TransformerEncoder(nn.Module):
 
 class TransformerDecoderBlock(nn.Module):
     def __init__(self, dim, heads = 8, mask = None, d_ff=None,
-                 attn_dropout=0.1, ff_dropout=0.1):
+                 attn_dropout=0.1, ff_dropout=0.1, prenorm=False):
         super().__init__()
-        self.attn = Residual(PreNorm(dim, Attention(dim, heads=heads, causal=True, dropout=attn_dropout)))
-        self.cross = Residual(PreNorm(dim, Attention(dim, heads=heads, causal=False, dropout=attn_dropout)))
-        self.ff = Residual(PreNorm(dim, FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
-
+        if prenorm:
+            self.attn = Residual(PreNorm(dim, Attention(dim, heads=heads, causal=True, dropout=attn_dropout)))
+            self.cross = Residual(PreNorm(dim, Attention(dim, heads=heads, causal=False, dropout=attn_dropout)))
+            self.ff = Residual(PreNorm(dim, FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
+        else:
+            self.attn = Residual(PostNorm(dim, Attention(dim, heads=heads, causal=True, dropout=attn_dropout)))
+            self.cross = Residual(PostNorm(dim, Attention(dim, heads=heads, causal=False, dropout=attn_dropout)))
+            self.ff = Residual(PostNorm(dim, FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
     def forward(self, x, context, mask=None, context_mask=None):
         out = self.attn(x, mask=mask)
         out = self.cross(out, context, mask=mask, context_mask=context_mask)
@@ -215,12 +224,12 @@ class TransformerDecoderBlock(nn.Module):
         return out
 
 class TransformerDecoder(nn.Module):
-    def __init__(self, dim, depth=6, heads=8, d_ff=None, attn_dropout=0.1, ff_dropout=0.1):
+    def __init__(self, dim, depth=6, heads=8, d_ff=None, attn_dropout=0.1, ff_dropout=0.1, prenorm=False):
         super().__init__()
         self.dim = dim
         self.layers = nn.ModuleList([])
         for _ in range(depth):
-            self.layers.append(TransformerDecoderBlock(dim, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout))
+            self.layers.append(TransformerDecoderBlock(dim, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=False))
     def forward(self, x, context, mask=None, context_mask=None):
         for layer in self.layers:
             x = layer(x, context, mask, context_mask)
@@ -307,15 +316,15 @@ class TransformerEncDec(nn.Module):
     def __init__(self, enc_vocab_sz, dec_vocab_sz, dim, depth=6, heads=8, 
                  max_seq_len=512, pad_idx=None, tie_weights=True, 
                  attn_dropout=0.1, ff_dropout=0.1, emb_dropout=0.1,
-                 pos_enc='absolute', d_ff=None):
+                 pos_enc='absolute', d_ff=None, prenorm=False):
         super().__init__()
         self.max_seq_len = max_seq_len
         self.depth = depth
         self.pad_idx = pad_idx
         self.enc_emb = TransformerEmbedding(enc_vocab_sz, dim, max_seq_len, dropout=emb_dropout)
         self.dec_emb = TransformerEmbedding(dec_vocab_sz, dim, max_seq_len, dropout=emb_dropout)
-        self.encoder = TransformerEncoder(dim, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout)
-        self.decoder = TransformerDecoder(dim, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout)
+        self.encoder = TransformerEncoder(dim, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm)
+        self.decoder = TransformerDecoder(dim, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm)
         self.proj = nn.Linear(dim, dec_vocab_sz)
         if tie_weights: self.proj.weight = self.dec_emb.emb.weight
 
@@ -431,15 +440,15 @@ class TransformerLM(nn.Module):
     def __init__(self, vocab_sz, dim, depth=6, heads=8, causal=True,
                  max_seq_len=512, tie_weights=True, d_ff=None,
                  attn_dropout=0.1, ff_dropout=0.1, emb_dropout=0.1,
-                 pos_enc='absolute', pad_idx=None):
+                 pos_enc='absolute', pad_idx=None, prenorm=False):
         super().__init__()
         self.max_seq_len = max_seq_len
         self.depth = depth
         self.pad_idx = pad_idx
         self.emb = TransformerEmbedding(vocab_sz, dim, max_seq_len, dropout=emb_dropout)
         self.tfmr = TransformerEncoder(dim, depth, heads, causal=causal, d_ff=d_ff, 
-                                       attn_dropout=attn_dropout,
-                                       ff_dropout=ff_dropout)
+                                       attn_dropout=attn_dropout, ff_dropout=ff_dropout,
+                                       prenorm=prenorm)
         self.proj = nn.Linear(dim, vocab_sz)
         if tie_weights: self.proj.weight = self.emb.emb.weight
         
