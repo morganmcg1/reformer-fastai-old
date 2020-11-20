@@ -333,6 +333,7 @@ class TransformerEncDec(nn.Module):
     @torch.no_grad()
     def generate(self, inp, 
                 context_inp,
+                context_mask=None,
                 max_len=50,
                 temperature=1.,
                 method = 'top_k',
@@ -347,8 +348,8 @@ class TransformerEncDec(nn.Module):
         inp = expand_dim1(inp)
         context_inp = expand_dim1(context_inp)
         b, t = inp.shape
-        src_mask = default(src_mask, model.get_padding_mask(context))
-        enc = self.encoder(self.enc_emb(context_inp), mask = src_mask)
+        context_mask = default(context_mask, model.get_padding_mask(context_inp))
+        enc = self.encoder(self.enc_emb(context_inp), mask = context_mask)
         out = inp
         for _ in range(max_len):
             x = out[:, -self.max_seq_len:]
@@ -364,8 +365,8 @@ class TransformerEncDec(nn.Module):
             out = torch.cat((out, sample), dim=-1)
 
             if (early_stopping and 
-                (sample == eos_idx).all() or 
-                (sample == self.pad_idx).all()):
+                ((sample == eos_idx).all() or 
+                (sample == self.pad_idx).all())):
                 break
         # out = out[:, t:]
         return out
