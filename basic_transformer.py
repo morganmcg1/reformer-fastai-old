@@ -310,6 +310,7 @@ class TransformerEncDec(nn.Module):
                  pos_enc='absolute', d_ff=None):
         super().__init__()
         self.max_seq_len = max_seq_len
+        self.depth = depth
         self.pad_idx = pad_idx
         self.enc_emb = TransformerEmbedding(enc_vocab_sz, dim, max_seq_len, dropout=emb_dropout)
         self.dec_emb = TransformerEmbedding(dec_vocab_sz, dim, max_seq_len, dropout=emb_dropout)
@@ -332,12 +333,14 @@ class TransformerEncDec(nn.Module):
     @torch.no_grad()
     def generate(self, inp, 
                 context_inp,
+                context_mask=None,
                 max_len=50,
                 temperature=1.,
                 method = 'top_k',
                 top_k = 20,
                 top_p = 0.9,
-                early_stopping=False):
+                early_stopping=False,
+                eos_idx=None):
         self.to(inp.device) #TODO test for potential problems
         self.eval()
         thresh = top_k if method=='top_k' else top_p
@@ -345,8 +348,8 @@ class TransformerEncDec(nn.Module):
         inp = expand_dim1(inp)
         context_inp = expand_dim1(context_inp)
         b, t = inp.shape
-        src_mask = default(src_mask, model.get_padding_mask(context))
-        enc = self.encoder(self.enc_emb(context_inp), mask = src_mask)
+        context_mask = default(context_mask, model.get_padding_mask(context_inp))
+        enc = self.encoder(self.enc_emb(context_inp), mask = context_mask)
         out = inp
         for _ in range(max_len):
             x = out[:, -self.max_seq_len:]
@@ -360,11 +363,52 @@ class TransformerEncDec(nn.Module):
                 sample = torch.multinomial(probs, 1)
 
             out = torch.cat((out, sample), dim=-1)
-            #TODO store eos_token_id in self
-            if early_stopping and (sample == bte.eos_token_id).all():
+
+            if (early_stopping and 
+                ((sample == eos_idx).all() or 
+                (sample == self.pad_idx).all())):
                 break
         # out = out[:, t:]
         return out
+    
+    def store_attention(self, layer_ids=None, store_encoder=True, store_decoder=True):
+        #defaults to storing attention for all layers
+        layer_ids = default(layer_ids, list(range(self.depth)))
+        for module in self.children():
+            if issubclass(type(module), TransformerEncoder) and store_encoder:
+                for i, l in enumerate(module.layers):
+                    if i in layer_ids:
+                        for m in l.modules():
+                            if issubclass(type(m), (Attention)):
+                                m.store_attention = True
+            elif issubclass(type(module), TransformerDecoder) and store_decoder:
+                for i, l in enumerate(module.layers):
+                    if i in layer_ids:
+                        for m in l.modules():
+                            if issubclass(type(m), (Attention)):
+                                m.store_attention = True
+    #TODO mb separate encoder and decoder attention
+    def get_attention_matrix(self, get_encoder=True, get_decoder=True):
+        res = []
+        if get_encoder:
+            for m in self.encoder.modules():
+                if issubclass(type(m), (Attention)):
+                    attention = getattr(m, 'attention', None)
+                    if attention is not None:
+                        res.append(attention)
+                    # reset stored attention
+                    m.attention = None
+                    m.store_attention = False
+        if get_decoder:
+            for m in self.decoder.modules():
+                if issubclass(type(m), (Attention)):
+                    attention = getattr(m, 'attention', None)
+                    if attention is not None:
+                        res.append(attention)
+                    # reset stored attention
+                    m.attention = None
+                    m.store_attention = False
+        return res
 
 class TransformerLM(nn.Module):
     """
@@ -387,9 +431,11 @@ class TransformerLM(nn.Module):
     def __init__(self, vocab_sz, dim, depth=6, heads=8, causal=True,
                  max_seq_len=512, tie_weights=True, d_ff=None,
                  attn_dropout=0.1, ff_dropout=0.1, emb_dropout=0.1,
-                 pos_enc='absolute'):
+                 pos_enc='absolute', pad_idx=None):
         super().__init__()
         self.max_seq_len = max_seq_len
+        self.depth = depth
+        self.pad_idx = pad_idx
         self.emb = TransformerEmbedding(vocab_sz, dim, max_seq_len, dropout=emb_dropout)
         self.tfmr = TransformerEncoder(dim, depth, heads, causal=causal, d_ff=d_ff, 
                                        attn_dropout=attn_dropout,
@@ -409,7 +455,8 @@ class TransformerLM(nn.Module):
                 method = 'top_k',
                 top_k = 20,
                 top_p = 0.9,
-                early_stopping=False):
+                early_stopping=False, #need eos_idx to work
+                eos_idx=None):
         self.to(inp.device) #TODO test for potential problems
         self.eval()
         thresh = top_k if method=='top_k' else top_p
@@ -429,22 +476,29 @@ class TransformerLM(nn.Module):
                 sample = torch.multinomial(probs, 1)
 
             out = torch.cat((out, sample), dim=-1)
-            #TODO store eos_token_id in self
-            if early_stopping and (sample == bte.eos_token_id).all():
+
+            if early_stopping and (sample == eos_idx).all():
                 break
         # out = out[:, t:]
         return out
-    # wip
-    def store_attention(self):
-        for m in self.modules():
-            if issubclass(type(m), Attention):
-                m.store_attention = True
+    
+    def store_attention(self, layer_ids=None):
+        #defaults to storing attention for all layers
+        layer_ids = default(layer_ids, list(range(self.depth)))
+        for module in self.children():
+            if issubclass(type(module), (TransformerEncoder, TransformerDecoder)):
+                for i, l in enumerate(module.layers):
+                    if i in layer_ids:
+                        for m in l.modules():
+                            if issubclass(type(m), (Attention)):
+                                m.store_attention = True
     def get_attention_matrix(self):
         res = []
         for m in self.modules():
-            if issubclass(type(m), Attention):
+            if issubclass(type(m), (Attention)):
                 attention = getattr(m, 'attention', None)
-                res.append(attention)
+                if attention is not None:
+                    res.append(attention)
                 # reset stored attention
                 m.attention = None
                 m.store_attention = False
