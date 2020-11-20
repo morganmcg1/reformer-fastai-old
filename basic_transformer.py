@@ -316,7 +316,7 @@ class TransformerEncDec(nn.Module):
         self.encoder = TransformerEncoder(dim, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout)
         self.decoder = TransformerDecoder(dim, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout)
         self.proj = nn.Linear(dim, dec_vocab_sz)
-        if tie_weights: self.proj.weight = self.emb.emb.weight
+        if tie_weights: self.proj.weight = self.dec_emb.emb.weight
 
     def forward(self, src, tgt, src_mask = None, tgt_mask = None):
         src_mask = default(src_mask, self.get_padding_mask(src))
@@ -345,11 +345,12 @@ class TransformerEncDec(nn.Module):
         inp = expand_dim1(inp)
         context_inp = expand_dim1(context_inp)
         b, t = inp.shape
+        src_mask = default(src_mask, model.get_padding_mask(context))
         enc = self.encoder(self.enc_emb(context_inp), mask = src_mask)
         out = inp
         for _ in range(max_len):
             x = out[:, -self.max_seq_len:]
-            dec = self.decoder(self.dec_emb(tgt), context=enc)
+            dec = self.decoder(self.dec_emb(out), context=enc)
             logits = self.proj(dec)[:, -1, :]
             if method == 'greedy':
                 sample = sampler(logits)
@@ -359,7 +360,7 @@ class TransformerEncDec(nn.Module):
                 sample = torch.multinomial(probs, 1)
 
             out = torch.cat((out, sample), dim=-1)
-
+            #TODO store eos_token_id in self
             if early_stopping and (sample == bte.eos_token_id).all():
                 break
         # out = out[:, t:]
@@ -428,7 +429,7 @@ class TransformerLM(nn.Module):
                 sample = torch.multinomial(probs, 1)
 
             out = torch.cat((out, sample), dim=-1)
-
+            #TODO store eos_token_id in self
             if early_stopping and (sample == bte.eos_token_id).all():
                 break
         # out = out[:, t:]
