@@ -70,8 +70,8 @@ class PostNorm(nn.Module):
         self.norm = nn.LayerNorm(dim)
 
     def forward(self, x, *args, **kwargs):
-        x = self.fn(x)
-        return self.norm(x, *args, **kwargs)
+        x = self.fn(x, *args, **kwargs)
+        return self.norm(x)
 
 class PreNorm(nn.Module):
     def __init__(self, dim, fn):
