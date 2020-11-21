@@ -176,6 +176,7 @@ class TransformerEncoderBlock(nn.Module):
     def __init__(self, dim, heads = 8, causal = False, mask = None, 
                  attn_dropout=0.1, ff_dropout=0.1, d_ff=None, prenorm=False):
         super().__init__()
+        self.attn_dropout = attn_dropout # mb separate argument
         if prenorm:
             self.attn = Residual(PreNorm(dim, Attention(dim, heads=heads, causal=causal, dropout=attn_dropout)))
             self.ff = Residual(PreNorm(dim, FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
@@ -184,6 +185,7 @@ class TransformerEncoderBlock(nn.Module):
             self.ff = Residual(PostNorm(dim, FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
     def forward(self, x, mask=None): #? more args
         out = self.attn(x, mask=mask)
+        out = F.dropout(out, p=self.attn_dropout)
         out = self.ff(out)
         return out
 
@@ -209,6 +211,7 @@ class TransformerDecoderBlock(nn.Module):
     def __init__(self, dim, heads = 8, mask = None, d_ff=None,
                  attn_dropout=0.1, ff_dropout=0.1, prenorm=False):
         super().__init__()
+        self.attn_dropout = attn_dropout # mb separate argument
         if prenorm:
             self.attn = Residual(PreNorm(dim, Attention(dim, heads=heads, causal=True, dropout=attn_dropout)))
             self.cross = Residual(PreNorm(dim, Attention(dim, heads=heads, causal=False, dropout=attn_dropout)))
@@ -219,7 +222,9 @@ class TransformerDecoderBlock(nn.Module):
             self.ff = Residual(PostNorm(dim, FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
     def forward(self, x, context, mask=None, context_mask=None):
         out = self.attn(x, mask=mask)
+        out = F.dropout(out, p=self.attn_dropout)
         out = self.cross(out, context, mask=mask, context_mask=context_mask)
+        out = F.dropout(out, p=self.attn_dropout)
         out = self.ff(out)
         return out
 
