@@ -343,27 +343,27 @@ class TransformerEncDec(nn.Module):
         if self.pad_idx is None: return None
         return (x != self.pad_idx)
     #TODO add beam search and refactor
-    #not tested
     @torch.no_grad()
-    def generate(self, inp, 
-                context_inp,
-                context_mask=None,
+    def generate(self, src,
+                src_mask=None,
                 max_len=50,
                 temperature=1.,
                 method = 'top_k',
                 top_k = 20,
                 top_p = 0.9,
                 early_stopping=False,
+                bos_idx=2, # TODO change to match future usecases
                 eos_idx=None):
-        self.to(inp.device) #TODO test for potential problems
+        self.to(src.device) #TODO test for potential problems
         self.eval()
         thresh = top_k if method=='top_k' else top_p
         sampler = _sampler[method]
-        inp = expand_dim1(inp)
-        context_inp = expand_dim1(context_inp)
-        b, t = inp.shape
-        context_mask = default(context_mask, model.get_padding_mask(context_inp))
-        enc = self.encoder(self.enc_emb(context_inp), mask = context_mask)
+        src = expand_dim1(src)
+        bs = src.size(0)
+        inp = src.new_full((bs, 1), bos_idx) #start with bos tokens
+        pdb.set_trace()
+        src_mask = default(src_mask, self.get_padding_mask(src))
+        enc = self.encoder(self.enc_emb(src), mask = src_mask)
         out = inp
         for _ in range(max_len):
             x = out[:, -self.max_seq_len:]
@@ -382,10 +382,10 @@ class TransformerEncDec(nn.Module):
                 ((sample == eos_idx).all() or 
                 (sample == self.pad_idx).all())):
                 break
-        # out = out[:, t:]
+        #TODO mb output cleanup
         return out
     
-    def store_attention(self, layer_ids=None, store_encoder=True, store_decoder=True):
+    def store_attention(self, layer_ids=None, store_encoder=False, store_decoder=True):
         #defaults to storing attention for all layers
         layer_ids = default(layer_ids, list(range(self.depth)))
         for module in self.children():
@@ -402,7 +402,7 @@ class TransformerEncDec(nn.Module):
                             if issubclass(type(m), (Attention)):
                                 m.store_attention = True
     #TODO mb separate encoder and decoder attention
-    def get_attention_matrix(self, get_encoder=True, get_decoder=True):
+    def get_attention_matrix(self, get_encoder=False, get_decoder=True):
         res = []
         if get_encoder:
             for m in self.encoder.modules():
