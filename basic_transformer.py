@@ -3,10 +3,15 @@
 import torch
 from torch import nn, einsum
 import torch.nn.functional as F
-from functools import partial
+from functools import partial, reduce
 from inspect import isfunction
+from operator import mul
 
 from einops import rearrange, repeat
+try:
+    from axial_positional_embedding import AxialPositionalEmbedding, AxialPositionalEmbeddingImage
+except ImportError as e:
+    print(e)
 
 # helpers
 
@@ -49,6 +54,12 @@ _sampler = {
     'top_p':top_p_filter,
     'gready':lambda x: x.argmax(-1)
 }
+
+# axial position helpers (subjected to review)
+def get_axial_dims(dim, n):
+    res = (dim//n, )*(n-1)
+    res += (dim-sum(res), )
+    return res
 
 """## Helpers and FeedForward"""
 
@@ -270,7 +281,8 @@ class TransformerEmbedding(nn.Module):
     Combines token embedings with positional encodings
     pos_enc: str from {'absolute', 'fixed', 'axial'}
     """
-    def __init__(self, emb_sz, dim, max_seq_len=512, dropout=0., pos_enc='absolute'):
+    def __init__(self, emb_sz, dim, max_seq_len=512, dropout=0., pos_enc='absolute', 
+                 axial_shape=None, axial_emb_dims=None):
         super().__init__()
         self.scale = dim**0.5
         self.emb = nn.Embedding(emb_sz, dim)
@@ -279,7 +291,10 @@ class TransformerEmbedding(nn.Module):
         elif pos_enc == 'fixed':
             self.pos_enc = FixedPositionalEmbedding(dim)
         elif pos_enc == 'axial':
-            raise NotImplementedError
+            assert axial_shape is not None
+            assert reduce(mul, axial_shape) == max_seq_len
+            axial_emb_dims = default(axial_emb_dims, get_axial_dims(dim, len(axial_shape)))
+            self.pos_enc = AxialPositionalEmbedding(dim, axial_shape, axial_emb_dims)
         self.dropout = nn.Dropout(dropout)
         self._init()
     def forward(self, x):
