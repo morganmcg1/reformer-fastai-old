@@ -336,13 +336,16 @@ class TransformerEncDec(nn.Module):
     def __init__(self, enc_vocab_sz, dec_vocab_sz, dim, depth=6, heads=8, 
                  max_seq_len=512, pad_idx=None, tie_weights=True, 
                  attn_dropout=0.1, ff_dropout=0.1, emb_dropout=0.1,
-                 pos_enc='absolute', d_ff=None, prenorm=False):
+                 pos_enc='absolute', d_ff=None, prenorm=False, 
+                 axial_shape=None, axial_emb_dims=None):
         super().__init__()
         self.max_seq_len = max_seq_len
         self.depth = depth
         self.pad_idx = pad_idx
-        self.enc_emb = TransformerEmbedding(enc_vocab_sz, dim, max_seq_len, dropout=emb_dropout)
-        self.dec_emb = TransformerEmbedding(dec_vocab_sz, dim, max_seq_len, dropout=emb_dropout)
+        self.enc_emb = TransformerEmbedding(enc_vocab_sz, dim, max_seq_len, dropout=emb_dropout,
+                                            axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
+        self.dec_emb = TransformerEmbedding(dec_vocab_sz, dim, max_seq_len, dropout=emb_dropout,
+                                            axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
         self.encoder = TransformerEncoder(dim, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm)
         self.decoder = TransformerDecoder(dim, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm)
         self.proj = nn.Linear(dim, dec_vocab_sz)
@@ -460,12 +463,14 @@ class TransformerLM(nn.Module):
     def __init__(self, vocab_sz, dim, depth=6, heads=8, causal=True,
                  max_seq_len=512, tie_weights=True, d_ff=None,
                  attn_dropout=0.1, ff_dropout=0.1, emb_dropout=0.1,
-                 pos_enc='absolute', pad_idx=None, prenorm=False):
+                 pos_enc='absolute', pad_idx=None, prenorm=False,
+                 axial_shape=None, axial_emb_dims=None):
         super().__init__()
         self.max_seq_len = max_seq_len
         self.depth = depth
         self.pad_idx = pad_idx
-        self.emb = TransformerEmbedding(vocab_sz, dim, max_seq_len, dropout=emb_dropout)
+        self.emb = TransformerEmbedding(vocab_sz, dim, max_seq_len, dropout=emb_dropout, 
+                                        axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
         self.tfmr = TransformerEncoder(dim, depth, heads, causal=causal, d_ff=d_ff, 
                                        attn_dropout=attn_dropout, ff_dropout=ff_dropout,
                                        prenorm=prenorm)
