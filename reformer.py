@@ -203,38 +203,6 @@ class ReversibleSequence(nn.Module):
 
 # mess for now; will clean up after LSHAttention args finalized
 class ReformerEncoder(nn.Module):
-    # def __init__(self, 
-    #              dim, 
-    #              depth, 
-    #              max_seq_len, 
-    #              heads = 8, 
-    #              dim_head = None, 
-    #              bucket_size = 64, 
-    #              n_hashes = 8, 
-    #              ff_chunks = 100, 
-    #              attn_chunks = None, # ??
-    #              causal = False, 
-    #              weight_tie = False, # ??
-    #              attn_dropoup = 0.,
-    #              post_attn_dropout = 0.,
-    #              lsh_dropout = 0., 
-    #              ff_dropout = 0., 
-    #              ff_activation = None, 
-    #              ff_d = 4, 
-    #              ff_glu = False, 
-    #              layer_dropout = 0., 
-    #              lsh_attend_across_buckets = True, 
-    #              lsh_allow_duplicate_attention = True, 
-    #              random_rotations_per_head = False, 
-    #              use_rezero = False, 
-    #              use_full_attn = False, 
-    #              full_attn_thres = 0, 
-    #              reverse_thres = 0, 
-    #              num_mem_kv = 0, 
-    #              one_value_head = False, 
-    #              n_local_attn_heads = 0, 
-    #              pkm_layers = tuple(), 
-    #              pkm_num_keys = 128):
     def __init__(self, 
                  dim, 
                  depth, 
@@ -267,7 +235,6 @@ class ReformerEncoder(nn.Module):
         self.depth = depth
 
         self.bucket_size = bucket_size
-        # self.twin_attention = twin_attention
         # self.full_attn_thres = full_attn_thres
         
         # use regular attention for now
@@ -275,10 +242,6 @@ class ReformerEncoder(nn.Module):
         # get_attn = lambda: LSHSelfAttention(dim, heads, bucket_size, n_hashes, causal = causal, dim_head = dim_head, dropout = lsh_dropout, post_attn_dropout = post_attn_dropout, attn_chunks = attn_chunks, allow_duplicate_attention = lsh_allow_duplicate_attention, attend_across_buckets = lsh_attend_across_buckets, random_rotations_per_head = random_rotations_per_head, num_mem_kv = num_mem_kv, use_full_attn = use_full_attn, full_attn_thres = full_attn_thres, one_value_head = one_value_head, n_local_attn_heads = n_local_attn_heads)
         # get_ff = lambda: Chunk(ff_chunks, FeedForward(dim, d_ff=ff_d, dropout=ff_dropout), along_dim = -2)
         get_ff = lambda: ChunkedFeedForward(dim, ff_d, chunks=ff_chunks, dropout=ff_dropout, along_dim=1)
-
-        # option to share weights between layers (ALBERT style)
-        # if weight_tie:
-        #     get_attn, get_ff, get_pkm = map(cache_fn, (get_attn, get_ff, get_pkm))
 
         blocks = []
         #TODO: find where ReZero proposed
@@ -339,8 +302,9 @@ class ReformerLM(nn.Module):#, TransformerLM):
         super().__init__()
         self.emb = TransformerEmbedding(vocab_sz, dim, max_seq_len=max_seq_len)
         #temp line to mark we need to pass more args to encoder
-        kwargs = {'causal':True}
-        self.encoder = ReformerEncoder(dim, depth, max_seq_len, **kwargs)
+        kwargs = {}
+        self.encoder = ReformerEncoder(dim, depth, max_seq_len, causal=causal,
+                                        **kwargs)
         self.proj = nn.Linear(d_model, vocab_sz)
         if tie_weights: self.proj.weight = self.emb.emb.weight
     def forward(self, x, mask=None):
