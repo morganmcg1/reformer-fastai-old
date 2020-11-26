@@ -175,6 +175,69 @@ class Attention(nn.Module):
         return out
 
 
+# decoder attention class combining self and cross attention 
+# may be replaced with generalized attention in future
+class DecoderAttention(nn.Module):
+    def __init__(self, 
+                 dim, 
+                 heads = 8, 
+                 causal = False,
+                 mask = None,
+                 dropout=0.1):
+        super().__init__()
+        self.causal = causal
+        self.store_attention = False
+        self.mask = mask #??
+        self.heads = heads
+        self.scale = dim ** -0.5
+        
+        self.to_q = nn.Linear(dim, dim, bias = False)
+        self.to_kv = nn.Linear(dim, dim * 2, bias = False)
+        self.dropout = nn.Dropout(dropout)
+
+        self.to_out = nn.Linear(dim, dim)
+
+    def forward(self, x, context = None, mask = None, context_mask = None, store_attention=False):
+        b, n, d, h, device = *x.shape, self.heads, x.device
+        context = default(context, torch.empty(b, 0, d, dtype=x.dtype, device=device))
+        kv_input = torch.cat([x, context], dim=-2)
+        
+        q = self.to_q(x)
+        kv = self.to_kv(kv_input).chunk(2, dim = -1)
+
+        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), (q, *kv))
+
+        # boolean input_mask is False at positions not to attend to
+        input_mask = None
+        if any(map(exists, (mask, context_mask))):
+            q_mask = default(mask, lambda: torch.ones((b, n), device = device).bool())
+            self_mask = q_mask[:, None, :, None] * q_mask[:, None, None, :]
+            if context.size(-2) != 0:
+                k_mask = default(context_mask, lambda: torch.ones((b, context.shape[-2]), device = device).bool())
+                cross_mask = q_mask[:, None, :, None] * k_mask[:, None, None, :]
+            else: cross_mask = torch.empty(0, dtype=self_mask.dtype, device=device)
+            input_mask = torch.cat([self_mask, cross_mask], dim=-1)
+        # classic scaled dot-product attention
+        dots = torch.einsum('bhid,bhjd->bhij', q, k) * self.scale
+        # might need to tune MASK_VAL for fp16 to work
+        if exists(input_mask):
+            dots.masked_fill_(~input_mask, MASK_VAL)
+            del input_mask
+
+        if self.causal:
+            i, j = torch.triu_indices(n, n, 1)
+            dots[:,:,i,j] = MASK_VAL
+
+        attn = F.softmax(dots, -1)
+        if self.store_attention: # and not self.training
+            self.attention = attn.detach().cpu()
+        attn = self.dropout(attn)
+
+        out = torch.einsum('bhij,bhjd->bhid', attn, v)
+        out = rearrange(out, 'b h n d -> b n (h d)')
+        out =  self.to_out(out)
+        return out
+
 """## Transformer blocks
 
 ### Encoder
@@ -234,13 +297,30 @@ class TransformerDecoderBlock(nn.Module):
         out = self.ff(out)
         return out
 
+class TransformerDecoderBlockV2(nn.Module):
+    def __init__(self, dim, heads = 8, mask = None, d_ff=None,
+                 attn_dropout=0.1, ff_dropout=0.1, prenorm=False):
+        super().__init__()
+        self.attn_dropout = attn_dropout # mb separate argument attn_post_dropout
+        norm_wrapper = PreNorm if prenorm else PostNorm
+        self.attn = Residual(norm_wrapper(dim, DecoderAttention(dim, heads=heads, causal=True, dropout=attn_dropout)))
+        self.ff = Residual(norm_wrapper(dim, FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
+        
+    def forward(self, x, context, mask=None, context_mask=None):
+        out = self.attn(x, context, mask=mask, context_mask=context_mask)
+        out = F.dropout(out, p=self.attn_dropout)
+        out = self.ff(out)
+        return out
+
 class TransformerDecoder(nn.Module):
-    def __init__(self, dim, depth=6, heads=8, d_ff=None, attn_dropout=0.1, ff_dropout=0.1, prenorm=False):
+    def __init__(self, dim, depth=6, heads=8, d_ff=None, attn_dropout=0.1, ff_dropout=0.1, prenorm=False, comb_attn=False):
         super().__init__()
         self.dim = dim
         self.layers = nn.ModuleList([])
+        #TODO(Arto) refactor
+        block = TransformerDecoderBlockV2 if comb_attn else TransformerDecoderBlock
         for _ in range(depth):
-            self.layers.append(TransformerDecoderBlock(dim, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=False))
+            self.layers.append(block(dim, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm))
     def forward(self, x, context, mask=None, context_mask=None):
         for layer in self.layers:
             x = layer(x, context, mask, context_mask)
@@ -332,7 +412,8 @@ class TransformerEncDec(nn.Module):
                  max_seq_len=512, pad_idx=None, tie_weights=True, 
                  attn_dropout=0.1, ff_dropout=0.1, emb_dropout=0.1,
                  pos_enc='absolute', d_ff=None, prenorm=False, 
-                 axial_shape=None, axial_emb_dims=None):
+                 axial_shape=None, axial_emb_dims=None,
+                 comb_attn=False):
         super().__init__()
         self.max_seq_len = max_seq_len
         self.depth = depth
@@ -342,7 +423,7 @@ class TransformerEncDec(nn.Module):
         self.dec_emb = TransformerEmbedding(dec_vocab_sz, dim, max_seq_len, dropout=emb_dropout,
                                             axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
         self.encoder = TransformerEncoder(dim, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm)
-        self.decoder = TransformerDecoder(dim, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm)
+        self.decoder = TransformerDecoder(dim, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, comb_attn=comb_attn)
         self.proj = nn.Linear(dim, dec_vocab_sz)
         if tie_weights: self.proj.weight = self.dec_emb.emb.weight
 
