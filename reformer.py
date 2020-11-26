@@ -206,8 +206,8 @@ class ReformerEncoder(nn.Module):
     def __init__(self, 
                  dim, 
                  depth, 
-                 max_seq_len, 
                  heads = 8, 
+                 max_seq_len = 512,              
                  dim_head = None, 
                  bucket_size = 64, 
                  n_hashes = 8, 
@@ -215,7 +215,7 @@ class ReformerEncoder(nn.Module):
                  attn_chunks = None, # ??
                  causal = False, 
                  weight_tie = False, # ??
-                 attn_dropoup = 0.,
+                 attn_dropout = 0.,
                  post_attn_dropout = 0.,
                  lsh_dropout = 0., 
                  ff_dropout = 0.,  
@@ -238,7 +238,7 @@ class ReformerEncoder(nn.Module):
         # self.full_attn_thres = full_attn_thres
         
         # use regular attention for now
-        get_attn = lambda: Attention(dim, heads, causal=causal, dropout=attn_dropoup)
+        get_attn = lambda: Attention(dim, heads, causal=causal, dropout=attn_dropout)
         # get_attn = lambda: LSHSelfAttention(dim, heads, bucket_size, n_hashes, causal = causal, dim_head = dim_head, dropout = lsh_dropout, post_attn_dropout = post_attn_dropout, attn_chunks = attn_chunks, allow_duplicate_attention = lsh_allow_duplicate_attention, attend_across_buckets = lsh_attend_across_buckets, random_rotations_per_head = random_rotations_per_head, num_mem_kv = num_mem_kv, use_full_attn = use_full_attn, full_attn_thres = full_attn_thres, one_value_head = one_value_head, n_local_attn_heads = n_local_attn_heads)
         # get_ff = lambda: Chunk(ff_chunks, FeedForward(dim, d_ff=ff_d, dropout=ff_dropout), along_dim = -2)
         get_ff = lambda: ChunkedFeedForward(dim, ff_d, chunks=ff_chunks, dropout=ff_dropout, along_dim=1)
@@ -269,6 +269,53 @@ class ReformerEncoder(nn.Module):
         return torch.stack(x.chunk(2, dim=-1)).mean(dim=0)
 
 
+class ReformerDecoder(nn.Module):
+    def __init__(self, 
+                 dim, 
+                 depth = 6, 
+                 heads = 8,  
+                 max_seq_len = 512,
+                 dim_head = None, 
+                 bucket_size = 64, 
+                 n_hashes = 8, 
+                 ff_chunks = 100, 
+                 attn_chunks = None, # ??
+                 causal = False, 
+                 weight_tie = False, # weight sharing option do we need to keep this?
+                 attn_dropout = 0.,
+                 post_attn_dropout = 0.,
+                 ff_dropout = 0.,  
+                 ff_d = None, 
+                 layer_dropout = 0.,
+                 prenorm=True,
+                 reverse_thres = 0,
+                 ):
+        super().__init__()
+        self.dim = dim
+        self.depth = depth
+        
+        # use regular attention for now
+        get_attn = lambda: DecoderAttention(dim, heads, causal=causal, dropout=attn_dropout)
+        get_ff = lambda: ChunkedFeedForward(dim, ff_d, chunks=ff_chunks, dropout=ff_dropout, along_dim=1)
+        norm_wrapper = PreNorm if prenorm else PostNorm
+        blocks = []
+        for ind in range(depth):
+            layer_num = ind + 1
+            
+            f = norm_wrapper(dim, get_attn())
+            g = norm_wrapper(dim, get_ff())
+
+            blocks.append(nn.ModuleList([f, g]))
+        # send_signal is not implemented for now
+        self.layers = ReversibleSequence(nn.ModuleList(blocks), layer_dropout=layer_dropout, reverse_thres=reverse_thres, send_signal=False)
+
+    def forward(self, x, **kwargs):
+        x = torch.cat([x, x], dim = -1)
+        arg_route = (True, False)
+        # pdb.set_trace()
+        x = self.layers(x, arg_route = arg_route, **kwargs)
+        return torch.stack(x.chunk(2, dim=-1)).mean(dim=0)
+
 class ReformerLM(nn.Module):#, TransformerLM):
     def __init__(self,
                  vocab_sz,
@@ -284,7 +331,7 @@ class ReformerLM(nn.Module):#, TransformerLM):
                  attn_chunks = None, # ??
                  causal = True, 
                  weight_tie = False, # ??
-                 attn_dropoup = 0.,
+                 attn_dropout = 0.,
                  post_attn_dropout = 0.,
                  lsh_dropout = 0., 
                  ff_dropout = 0.,  
@@ -311,3 +358,150 @@ class ReformerLM(nn.Module):#, TransformerLM):
         x = self.emb(x)
         x = self.encoder(x, mask=mask)
         return self.proj(x)
+
+
+
+class ReformerEncDec(nn.Module):
+    """
+    Reformer Encoder-Decoder model [under development]
+    ...
+    Parameters:
+        * enc_vocab_sz: int - source vocab size 
+        * dec_vocab_sz: int - target vocab size
+        * dim: int - inner dimension of the model
+        * depth: int (default: 6) 
+        * heads: int (default: 8)
+        * max_seq_len: int (default: 512)
+        * pad_idx: int - padding token id, if pad_idx is provided, and no mask/context_mask are passed to 
+                forward method will be used to generate padding masks
+        * tie_weights: bool - if True target embedding weights are used for computation output projection
+        * pos_enc: str from {'absolute', 'fixed', 'axial'} - type of positional encoding to use
+    Inputs:
+        * src - source input ids, shape [bs, src_sl]
+        * tgt - target input ids, shape [bs, tgt_sl]
+        * src_mask - optional boolean source mask, shape [bs, src_sl]
+        * tgt_mask - optional boolean target mask, shape [bs, tgt_sl]
+    Returns:
+        * logits - target token logits, shape [bs, tgt_sl, tgt_vocab_sz]
+    """
+    def __init__(self,
+                 enc_vocab_sz, 
+                 dec_vocab_sz, 
+                 dim, 
+                 depth=6, 
+                 heads=8, 
+                 max_seq_len=512, 
+                 pad_idx=None, 
+                 tie_weights=True,                  
+                 emb_dropout=0.1,
+                 attn_dropout=0.1, 
+                 ff_dropout=0.1,
+                 pos_enc='absolute', 
+                 ff_d=None, 
+                 prenorm=False, 
+                 axial_shape=None, 
+                 axial_emb_dims=None,
+                 comb_attn=False):
+        super().__init__()
+        self.max_seq_len = max_seq_len
+        self.depth = depth
+        self.pad_idx = pad_idx
+        self.enc_emb = TransformerEmbedding(enc_vocab_sz, dim, max_seq_len, dropout=emb_dropout,
+                                            axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
+        self.dec_emb = TransformerEmbedding(dec_vocab_sz, dim, max_seq_len, dropout=emb_dropout,
+                                            axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
+        self.encoder = ReformerEncoder(dim, depth, heads, ff_d=ff_d, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm)
+        self.decoder = ReformerDecoder(dim, depth, heads, ff_d=ff_d, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm)
+        self.proj = nn.Linear(dim, dec_vocab_sz)
+        if tie_weights: self.proj.weight = self.dec_emb.emb.weight
+
+    def forward(self, src, tgt, src_mask = None, tgt_mask = None):
+        src_mask = default(src_mask, self.get_padding_mask(src))
+        tgt_mask = default(tgt_mask, self.get_padding_mask(tgt))
+        enc = self.encoder(self.enc_emb(src), mask = src_mask)
+        out = self.decoder(self.dec_emb(tgt), context=enc, mask=tgt_mask, context_mask=src_mask)
+        return self.proj(out)
+    def get_padding_mask(self, x):
+        if self.pad_idx is None: return None
+        return (x != self.pad_idx)
+    #TODO add beam search and refactor
+    @torch.no_grad()
+    def generate(self, src,
+                src_mask=None,
+                max_len=50,
+                temperature=1.,
+                method = 'top_k',
+                top_k = 20,
+                top_p = 0.9,
+                early_stopping=False,
+                bos_idx=2, # TODO change to match future usecases
+                eos_idx=None):
+        self.to(src.device) #TODO test for potential problems
+        self.eval()
+        thresh = top_k if method=='top_k' else top_p
+        sampler = _sampler[method]
+        src = expand_dim1(src)
+        bs = src.size(0)
+        inp = src.new_full((bs, 1), bos_idx) #start with bos tokens
+        pdb.set_trace()
+        src_mask = default(src_mask, self.get_padding_mask(src))
+        enc = self.encoder(self.enc_emb(src), mask = src_mask)
+        out = inp
+        for _ in range(max_len):
+            x = out[:, -self.max_seq_len:]
+            dec = self.decoder(self.dec_emb(out), context=enc)
+            logits = self.proj(dec)[:, -1, :]
+            if method == 'greedy':
+                sample = sampler(logits)
+            else:
+                filtered_logits = sampler(logits)
+                probs = F.softmax(filtered_logits / temperature, dim=-1)
+                sample = torch.multinomial(probs, 1)
+
+            out = torch.cat((out, sample), dim=-1)
+
+            if (early_stopping and 
+                ((sample == eos_idx).all() or 
+                (sample == self.pad_idx).all())):
+                break
+        #TODO mb output cleanup
+        return out
+    
+    def store_attention(self, layer_ids=None, store_encoder=False, store_decoder=True):
+        #defaults to storing attention for all layers
+        layer_ids = default(layer_ids, list(range(self.depth)))
+        for module in self.children():
+            if issubclass(type(module), TransformerEncoder) and store_encoder:
+                for i, l in enumerate(module.layers):
+                    if i in layer_ids:
+                        for m in l.modules():
+                            if issubclass(type(m), (Attention)):
+                                m.store_attention = True
+            elif issubclass(type(module), TransformerDecoder) and store_decoder:
+                for i, l in enumerate(module.layers):
+                    if i in layer_ids:
+                        for m in l.modules():
+                            if issubclass(type(m), (Attention)):
+                                m.store_attention = True
+    #TODO mb separate encoder and decoder attention
+    def get_attention_matrix(self, get_encoder=False, get_decoder=True):
+        res = []
+        if get_encoder:
+            for m in self.encoder.modules():
+                if issubclass(type(m), (Attention)):
+                    attention = getattr(m, 'attention', None)
+                    if attention is not None:
+                        res.append(attention)
+                    # reset stored attention
+                    m.attention = None
+                    m.store_attention = False
+        if get_decoder:
+            for m in self.decoder.modules():
+                if issubclass(type(m), (Attention)):
+                    attention = getattr(m, 'attention', None)
+                    if attention is not None:
+                        res.append(attention)
+                    # reset stored attention
+                    m.attention = None
+                    m.store_attention = False
+        return res
