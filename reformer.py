@@ -350,7 +350,7 @@ class ReformerLM(nn.Module):#, TransformerLM):
         self.emb = TransformerEmbedding(vocab_sz, dim, max_seq_len=max_seq_len)
         #temp line to mark we need to pass more args to encoder
         kwargs = {}
-        self.encoder = ReformerEncoder(dim, depth, max_seq_len, causal=causal,
+        self.encoder = ReformerEncoder(dim, depth, max_seq_len=max_seq_len, causal=causal, reverse_thres=reverse_thres,
                                         **kwargs)
         self.proj = nn.Linear(dim, vocab_sz)
         if tie_weights: self.proj.weight = self.emb.emb.weight
@@ -401,7 +401,8 @@ class ReformerEncDec(nn.Module):
                  prenorm=False, 
                  axial_shape=None, 
                  axial_emb_dims=None,
-                 comb_attn=False):
+                 comb_attn=False,
+                 reverse_thres=0):
         super().__init__()
         self.max_seq_len = max_seq_len
         self.depth = depth
@@ -410,8 +411,8 @@ class ReformerEncDec(nn.Module):
                                             axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
         self.dec_emb = TransformerEmbedding(dec_vocab_sz, dim, max_seq_len, dropout=emb_dropout,
                                             axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
-        self.encoder = ReformerEncoder(dim, depth, heads, ff_d=ff_d, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm)
-        self.decoder = ReformerDecoder(dim, depth, heads, ff_d=ff_d, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm)
+        self.encoder = ReformerEncoder(dim, depth, heads, ff_d=ff_d, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, reverse_thres=reverse_thres)
+        self.decoder = ReformerDecoder(dim, depth, heads, ff_d=ff_d, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, reverse_thres=reverse_thres)
         self.proj = nn.Linear(dim, dec_vocab_sz)
         if tie_weights: self.proj.weight = self.dec_emb.emb.weight
 

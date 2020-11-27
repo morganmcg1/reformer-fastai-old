@@ -455,7 +455,6 @@ class TransformerEncDec(nn.Module):
         src = expand_dim1(src)
         bs = src.size(0)
         inp = src.new_full((bs, 1), bos_idx) #start with bos tokens
-        pdb.set_trace()
         src_mask = default(src_mask, self.get_padding_mask(src))
         enc = self.encoder(self.enc_emb(src), mask = src_mask)
         out = inp
