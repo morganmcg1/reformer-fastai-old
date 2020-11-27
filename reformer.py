@@ -352,7 +352,7 @@ class ReformerLM(nn.Module):#, TransformerLM):
         kwargs = {}
         self.encoder = ReformerEncoder(dim, depth, max_seq_len, causal=causal,
                                         **kwargs)
-        self.proj = nn.Linear(d_model, vocab_sz)
+        self.proj = nn.Linear(dim, vocab_sz)
         if tie_weights: self.proj.weight = self.emb.emb.weight
     def forward(self, x, mask=None):
         x = self.emb(x)
