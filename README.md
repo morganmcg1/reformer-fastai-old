@@ -19,6 +19,7 @@ Fastai community entry to [2020 Reproducibility Challenge](https://paperswithcod
 ### Code
 - [@lucidrain’s Reformer code](https://github.com/lucidrains/reformer-pytorch/)
 - [HuggingFace: Reformer source code](https://github.com/huggingface/transformers/blob/a1bbcf3f6c20e15fe799a8659d6b7bd36fdf11ed/src/transformers/modeling_reformer.py)
+    - [Reformer enwik8 configs](https://github.com/google/trax/blob/master/trax/supervised/configs/reformer_enwik8.gin)
 - [HuggingFace: Reformer notebook example](https://colab.research.google.com/github/patrickvonplaten/blog/blob/master/notebooks/03_reformer.ipynb)
 - [HuggingFace: long sequences](https://colab.research.google.com/github/patrickvonplaten/notebooks/blob/master/PyTorch_Reformer.ipynb)
 - [HuggingFace: Pretraining](https://colab.research.google.com/drive/1tzzh0i8PgDQGV3SMFUGxM7_gGae3K-uW?usp=sharing)
