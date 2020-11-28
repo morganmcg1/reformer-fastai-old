@@ -134,7 +134,7 @@ class Attention(nn.Module):
 
         self.to_out = nn.Linear(dim, dim)
 
-        # self._init()
+        self._init()
 
     def forward(self, x, context = None, mask = None, context_mask = None, store_attention=False):
         b, n, _, h, device = *x.shape, self.heads, x.device
@@ -180,10 +180,10 @@ class Attention(nn.Module):
     def _init(self):
         nn.init.xavier_uniform_(self.to_q.weight)
         nn.init.xavier_uniform_(self.to_kv.weight)
-        nn.init.xavier_uniform_(self.to_out)
-        if getattr(self.to_q, 'bias', None):
+        nn.init.xavier_uniform_(self.to_out.weight)
+        if getattr(self.to_q, 'bias', None) is not None:
             nn.init.constant_(self.to_q.bias, 0)
-        if getattr(self.to_kv, 'bias', None):
+        if getattr(self.to_kv, 'bias', None) is not None:
             nn.init.constant_(self.to_kv.bias, 0)
         nn.init.constant_(self.to_out.bias, 0)
 
@@ -210,7 +210,7 @@ class DecoderAttention(nn.Module):
 
         self.to_out = nn.Linear(dim, dim)
 
-        # self._init()
+        self._init()
 
     def forward(self, x, context = None, mask = None, context_mask = None, store_attention=False):
         b, n, d, h, device = *x.shape, self.heads, x.device
@@ -256,10 +256,10 @@ class DecoderAttention(nn.Module):
     def _init(self):
         nn.init.xavier_uniform_(self.to_q.weight)
         nn.init.xavier_uniform_(self.to_kv.weight)
-        nn.init.xavier_uniform_(self.to_out)
-        if getattr(self.to_q, 'bias', None):
+        nn.init.xavier_uniform_(self.to_out.weight)
+        if getattr(self.to_q, 'bias', None) is not None:
             nn.init.constant_(self.to_q.bias, 0)
-        if getattr(self.to_kv, 'bias', None):
+        if getattr(self.to_kv, 'bias', None) is not None:
             nn.init.constant_(self.to_kv.bias, 0)
         nn.init.constant_(self.to_out.bias, 0)
 
