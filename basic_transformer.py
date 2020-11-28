@@ -356,7 +356,7 @@ class TransformerDecoder(nn.Module):
         block = TransformerDecoderBlockV2 if comb_attn else TransformerDecoderBlock
         for _ in range(depth):
             self.layers.append(block(dim, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, attn_bias=attn_bias))
-        if final_norn is not None:
+        if final_norm is not None:
             self.norm = final_norm(dim)
     def forward(self, x, context, mask=None, context_mask=None):
         for layer in self.layers:
@@ -418,9 +418,9 @@ class TransformerEmbedding(nn.Module):
         x += self.pos_enc(x)
         return self.dropout(x)
     def _init(self):
-        nn.init.normal_(self.emb.weight, std = 0.02)
+        nn.init.trunc_normal_(self.emb.weight, std = 0.02)
         if hasattr(self.pos_enc, 'weight'):
-            nn.init.normal_(self.pos_enc.weight, std = 0.02)
+            nn.init.trunc_normal_(self.pos_enc.weight, std = 0.02)
 
 #TODO test weight tying
 # Note on weight tying: it's done like here in fastai AWD_LSTM model
