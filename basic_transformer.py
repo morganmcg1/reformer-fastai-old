@@ -449,9 +449,9 @@ class TransformerEncDec(nn.Module):
         self.max_seq_len = max_seq_len
         self.depth = depth
         self.pad_idx = pad_idx
-        self.enc_emb = TransformerEmbedding(enc_vocab_sz, dim, max_seq_len, dropout=emb_dropout,
+        self.enc_emb = TransformerEmbedding(enc_vocab_sz, dim, max_seq_len, dropout=emb_dropout, pos_enc=pos_enc,
                                             axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
-        self.dec_emb = TransformerEmbedding(dec_vocab_sz, dim, max_seq_len, dropout=emb_dropout,
+        self.dec_emb = TransformerEmbedding(dec_vocab_sz, dim, max_seq_len, dropout=emb_dropout, pos_enc=pos_enc,
                                             axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
         self.encoder = TransformerEncoder(dim, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, attn_bias=attn_bias)
         self.decoder = TransformerDecoder(dim, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, comb_attn=comb_attn, attn_bias=attn_bias)
@@ -575,7 +575,7 @@ class TransformerLM(nn.Module):
         self.max_seq_len = max_seq_len
         self.depth = depth
         self.pad_idx = pad_idx
-        self.emb = TransformerEmbedding(vocab_sz, dim, max_seq_len, dropout=emb_dropout, 
+        self.emb = TransformerEmbedding(vocab_sz, dim, max_seq_len, dropout=emb_dropout, pos_enc=pos_enc,
                                         axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
         self.tfmr = TransformerEncoder(dim, depth, heads, causal=causal, d_ff=d_ff, 
                                        attn_dropout=attn_dropout, ff_dropout=ff_dropout,
