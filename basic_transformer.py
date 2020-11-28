@@ -290,16 +290,20 @@ class TransformerEncoderBlock(nn.Module):
 
 class TransformerEncoder(nn.Module):
     def __init__(self, dim, depth=6, heads=8, causal=False, d_ff=None, attn_dropout=0.1, attn_bias=True,
-                ff_dropout=0.1, prenorm=False):
+                ff_dropout=0.1, prenorm=False, final_norm=None):
         super().__init__()
         self.dim = dim
         self.layers = nn.ModuleList([])
         for _ in range(depth):
             self.layers.append(TransformerEncoderBlock(dim, heads, causal=causal, d_ff=d_ff, 
                                     attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, attn_bias=attn_bias))
+        if final_norm is not None:
+            self.norm = final_norm(dim)
     def forward(self, x, mask=None):
         for layer in self.layers:
             x = layer(x, mask=mask)
+        if self.norm is not None:
+            x = self.norm(x)
         return x
 
 """Decoder block has attention and cross attention
@@ -344,7 +348,7 @@ class TransformerDecoderBlockV2(nn.Module):
 
 class TransformerDecoder(nn.Module):
     def __init__(self, dim, depth=6, heads=8, d_ff=None, attn_dropout=0.1, ff_dropout=0.1, 
-                 prenorm=False, comb_attn=False, attn_bias=True):
+                 prenorm=False, comb_attn=False, attn_bias=True, final_norm=None):
         super().__init__()
         self.dim = dim
         self.layers = nn.ModuleList([])
@@ -352,9 +356,13 @@ class TransformerDecoder(nn.Module):
         block = TransformerDecoderBlockV2 if comb_attn else TransformerDecoderBlock
         for _ in range(depth):
             self.layers.append(block(dim, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, attn_bias=attn_bias))
+        if final_norn is not None:
+            self.norm = final_norm(dim)
     def forward(self, x, context, mask=None, context_mask=None):
         for layer in self.layers:
             x = layer(x, context, mask, context_mask)
+        if self.norm is not None:
+            x = self.norm(x)
         return x
 
 """### Models"""
@@ -453,8 +461,10 @@ class TransformerEncDec(nn.Module):
                                             axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
         self.dec_emb = TransformerEmbedding(dec_vocab_sz, dim, max_seq_len, dropout=emb_dropout, pos_enc=pos_enc,
                                             axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
-        self.encoder = TransformerEncoder(dim, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, attn_bias=attn_bias)
-        self.decoder = TransformerDecoder(dim, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, comb_attn=comb_attn, attn_bias=attn_bias)
+        self.encoder = TransformerEncoder(dim, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, 
+                                          prenorm=prenorm, attn_bias=attn_bias, final_norm=nn.LayerNorm)
+        self.decoder = TransformerDecoder(dim, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, 
+                                          prenorm=prenorm, comb_attn=comb_attn, attn_bias=attn_bias, final_norm=nn.LayerNorm)
         self.proj = nn.Linear(dim, dec_vocab_sz)
         if tie_weights: self.proj.weight = self.dec_emb.emb.weight
 
@@ -579,7 +589,7 @@ class TransformerLM(nn.Module):
                                         axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
         self.tfmr = TransformerEncoder(dim, depth, heads, causal=causal, d_ff=d_ff, 
                                        attn_dropout=attn_dropout, ff_dropout=ff_dropout,
-                                       prenorm=prenorm, attn_bias=attn_bias)
+                                       prenorm=prenorm, attn_bias=attn_bias, final_norm=nn.LayerNorm)
         self.proj = nn.Linear(dim, vocab_sz)
         if tie_weights: self.proj.weight = self.emb.emb.weight
         
