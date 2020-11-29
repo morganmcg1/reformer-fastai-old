@@ -21,6 +21,8 @@ Fastai community entry to [2020 Reproducibility Challenge](https://paperswithcod
 - [HuggingFace: Reformer source code](https://github.com/huggingface/transformers/blob/a1bbcf3f6c20e15fe799a8659d6b7bd36fdf11ed/src/transformers/modeling_reformer.py)
     - [Reformer enwik8 configs](https://github.com/google/trax/blob/master/trax/supervised/configs/reformer_enwik8.gin)
     - [Reformer WMT14 en-de configs](https://github.com/google/trax/blob/master/trax/supervised/configs/reformer_wmt_ende.gin)
+    - [Reformer Machine Translation example](https://github.com/google/trax/blob/a0483a12cb7ebece40b5e302e8e81fd9249c6ef6/trax/models/reformer/machine_translation.ipynb)
+    = [SubwordTextEncoder tokenizer used for Machine Translation](https://github.com/tensorflow/tensor2tensor/blob/21dba2c1bdcc7ab582a2bfd8c0885c217963bb4f/tensor2tensor/data_generators/text_encoder.py#L448)
 - [HuggingFace: Reformer notebook example](https://colab.research.google.com/github/patrickvonplaten/blog/blob/master/notebooks/03_reformer.ipynb)
 - [HuggingFace: long sequences](https://colab.research.google.com/github/patrickvonplaten/notebooks/blob/master/PyTorch_Reformer.ipynb)
 - [HuggingFace: Pretraining](https://colab.research.google.com/drive/1tzzh0i8PgDQGV3SMFUGxM7_gGae3K-uW?usp=sharing)
