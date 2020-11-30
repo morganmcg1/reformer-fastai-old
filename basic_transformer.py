@@ -126,7 +126,7 @@ class Attention(nn.Module):
         self.store_attention = False
         self.mask = mask #??
         self.heads = heads
-        self.scale = dim ** -0.5
+        self.scale = (dim//heads) ** -0.5
         
         self.to_q = nn.Linear(dim, dim, bias=bias)
         self.to_kv = nn.Linear(dim, dim * 2, bias=bias)
@@ -202,7 +202,7 @@ class DecoderAttention(nn.Module):
         self.store_attention = False
         self.mask = mask #??
         self.heads = heads
-        self.scale = dim ** -0.5
+        self.scale = (dim//heads) ** -0.5
         
         self.to_q = nn.Linear(dim, dim, bias = bias)
         self.to_kv = nn.Linear(dim, dim * 2, bias = bias)
