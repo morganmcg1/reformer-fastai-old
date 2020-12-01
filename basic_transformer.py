@@ -41,8 +41,8 @@ def top_p_filter(logits, top_p=0.9):
     #         # Keep at least min_tokens_to_keep (set to min_tokens_to_keep-1 because we add the first one below)
     #         sorted_indices_to_remove[..., : min_tokens_to_keep - 1] = 0
     indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
-    scores[indices_to_remove] = float('-inf')
-    return scores
+    logits[indices_to_remove] = float('-inf')
+    return logits
 
 def top_k_filter(logits, top_k=20):
     indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
@@ -63,7 +63,7 @@ def get_axial_dims(dim, n):
 
 """## Helpers and FeedForward"""
 
-# helper classes 
+# helper classes
 # based on https://github.com/lucidrains/all-normalization-transformer/blob/master/all_normalization_transformer/all_normalization_transformer.py
 
 class Residual(nn.Module):
@@ -282,7 +282,7 @@ class TransformerEncoderBlock(nn.Module):
             self.attn = Residual(PreNorm(dim, Attention(dim, heads=heads, causal=causal, dropout=attn_dropout, bias=attn_bias)))
             self.ff = Residual(PreNorm(dim, FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
         else:
-            self.attn = PostNorm(dim, Residul(Attention(dim, heads=heads, causal=causal, dropout=attn_dropout, bias=attn_bias)))
+            self.attn = PostNorm(dim, Residual(Attention(dim, heads=heads, causal=causal, dropout=attn_dropout, bias=attn_bias)))
             self.ff = PostNorm(dim, Residual(FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
         
     def forward(self, x, mask=None): #? more args
@@ -325,8 +325,8 @@ class TransformerDecoderBlock(nn.Module):
             self.cross = Residual(PreNorm(dim, Attention(dim, heads=heads, causal=False, dropout=attn_dropout, bias=attn_bias)))
             self.ff = Residual(PreNorm(dim, FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
         else:
-            self.attn = PostNorm(dim, Residul(Attention(dim, heads=heads, causal=causal, dropout=attn_dropout, bias=attn_bias)))
-            self.cross = PostNorm(dim, Residul(Attention(dim, heads=heads, causal=False, dropout=attn_dropout, bias=attn_bias)))
+            self.attn = PostNorm(dim, Residual(Attention(dim, heads=heads, causal=True, dropout=attn_dropout, bias=attn_bias)))
+            self.cross = PostNorm(dim, Residual(Attention(dim, heads=heads, causal=False, dropout=attn_dropout, bias=attn_bias)))
             self.ff = PostNorm(dim, Residual(FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
         
     def forward(self, x, context, mask=None, context_mask=None):
@@ -344,10 +344,10 @@ class TransformerDecoderBlockV2(nn.Module):
         super().__init__()
         self.attn_dropout = attn_dropout # mb separate argument attn_post_dropout
         if prenorm:
-            self.attn = Residual(PreNorm(dim, DecoderAttention(dim, heads=heads, causal=causal, dropout=attn_dropout, bias=attn_bias)))
+            self.attn = Residual(PreNorm(dim, DecoderAttention(dim, heads=heads, causal=True, dropout=attn_dropout, bias=attn_bias)))
             self.ff = Residual(PreNorm(dim, FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
         else:
-            self.attn = PostNorm(dim, Residul(DecoderAttention(dim, heads=heads, causal=True, dropout=attn_dropout, bias=attn_bias)))
+            self.attn = PostNorm(dim, Residual(DecoderAttention(dim, heads=heads, causal=True, dropout=attn_dropout, bias=attn_bias)))
             self.ff = PostNorm(dim, Residual(FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
         
     def forward(self, x, context, mask=None, context_mask=None):
@@ -422,7 +422,6 @@ class TransformerEmbedding(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self._init()
     def forward(self, x):
-        _, n = x.shape
         x = self.emb(x)
         x *= self.scale
         x += self.pos_enc(x)
@@ -516,7 +515,7 @@ class TransformerEncDec(nn.Module):
             if method == 'greedy':
                 sample = sampler(logits)
             else:
-                filtered_logits = sampler(logits)
+                filtered_logits = sampler(logits, thresh)
                 probs = F.softmax(filtered_logits / temperature, dim=-1)
                 sample = torch.multinomial(probs, 1)
 
@@ -528,7 +527,7 @@ class TransformerEncDec(nn.Module):
                 break
         #TODO mb output cleanup
         return out
-    
+          
     def store_attention(self, layer_ids=None, store_encoder=False, store_decoder=True):
         #defaults to storing attention for all layers
         layer_ids = default(layer_ids, list(range(self.depth)))
