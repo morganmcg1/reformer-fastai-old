@@ -111,7 +111,7 @@ class FeedForward(nn.Module):
 
 """## Attention"""
 
-MASK_VAL = -1e4 # instead of float('-inf') to make fp16 work
+MASK_VAL = -5e4 # instead of float('-inf') to make fp16 work
 
 class Attention(nn.Module):
     def __init__(self, 
@@ -300,8 +300,7 @@ class TransformerEncoder(nn.Module):
         for _ in range(depth):
             self.layers.append(TransformerEncoderBlock(dim, heads, causal=causal, d_ff=d_ff, 
                                     attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, attn_bias=attn_bias))
-        if final_norm is not None:
-            self.norm = final_norm(dim)
+        self.norm = None if final_norm is None else final_norm(dim)
     def forward(self, x, mask=None):
         for layer in self.layers:
             x = layer(x, mask=mask)
@@ -366,8 +365,7 @@ class TransformerDecoder(nn.Module):
         block = TransformerDecoderBlockV2 if comb_attn else TransformerDecoderBlock
         for _ in range(depth):
             self.layers.append(block(dim, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, attn_bias=attn_bias))
-        if final_norm is not None:
-            self.norm = final_norm(dim)
+        self.norm = None if final_norm is None else final_norm(dim)
     def forward(self, x, context, mask=None, context_mask=None):
         for layer in self.layers:
             x = layer(x, context, mask, context_mask)
