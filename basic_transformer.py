@@ -527,7 +527,7 @@ class TransformerEncDec(nn.Module):
                 break
         #TODO mb output cleanup
         return out
-          
+
     def store_attention(self, layer_ids=None, store_encoder=False, store_decoder=True):
         #defaults to storing attention for all layers
         layer_ids = default(layer_ids, list(range(self.depth)))
@@ -640,7 +640,7 @@ class TransformerLM(nn.Module):
                 break
         # out = out[:, t:]
         return out
-    
+
     def store_attention(self, layer_ids=None):
         #defaults to storing attention for all layers
         layer_ids = default(layer_ids, list(range(self.depth)))
