@@ -105,8 +105,12 @@ class FeedForward(nn.Module):
             nn.Linear(d_ff, dim),
             nn.Dropout(dropout)
         )
+        self._init()
     def forward(self, x):
         return self.net(x)
+    def _init(self):
+        for p in self.parameters():
+            if p.dim()>1: nn.init.xavier_uniform_(p)
 
 
 """## Attention"""
@@ -154,7 +158,7 @@ class Attention(nn.Module):
             k_mask = rearrange(k_mask, 'b j -> b () () j')
             input_mask = q_mask * k_mask
         # classic dot-product attention
-        dots = torch.einsum('bhid,bhjd->bhij', q, k) * self.scale
+        dots = torch.einsum('bhid,bhjd->bhij', q*self.scale, k)
         # might need to tune MASK_VAL for fp16 to work
         if exists(input_mask):
             dots.masked_fill_(~input_mask, MASK_VAL)
@@ -233,7 +237,7 @@ class DecoderAttention(nn.Module):
             else: cross_mask = torch.empty(0, dtype=self_mask.dtype, device=device)
             input_mask = torch.cat([self_mask, cross_mask], dim=-1)
         # classic scaled dot-product attention
-        dots = torch.einsum('bhid,bhjd->bhij', q, k) * self.scale
+        dots = torch.einsum('bhid,bhjd->bhij', q * self.scale, k)
         # might need to tune MASK_VAL for fp16 to work
         if exists(input_mask):
             dots.masked_fill_(~input_mask, MASK_VAL)
