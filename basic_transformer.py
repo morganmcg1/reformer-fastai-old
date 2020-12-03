@@ -30,9 +30,6 @@ def expand_dim1(x):
     if len(x.shape) == 1:
         return x[None, :]
     else: return x
-
-def _get_clones(module, N):
-    return nn.ModuleList([deepcopy(module) for i in range(N)])
     
 # generative helpers
 # credit https://github.com/huggingface/transformers/blob/a0c62d249303a68f5336e3f9a96ecf9241d7abbe/src/transformers/generation_logits_process.py
@@ -76,7 +73,6 @@ class Residual(Module):
     def __init__(self, fn): store_attr()
     def forward(self, x, *args, **kwargs):
         return x + self.fn(x, *args, **kwargs)
-  
 
 # Added *args, **kwargs here to pass context and masks
 class PostNorm(Module):
@@ -230,8 +226,10 @@ class DecoderAttention(nn.Module):
                 cross_mask = q_mask[:, None, :, None] * k_mask[:, None, None, :]
             else: cross_mask = torch.empty(0, dtype=self_mask.dtype, device=device)
             input_mask = torch.cat([self_mask, cross_mask], dim=-1)
+        
         # classic scaled dot-product attention
         dots = torch.einsum('bhid,bhjd->bhij', q * self.scale, k)
+        
         # might need to tune MASK_VAL for fp16 to work
         if exists(input_mask):
             dots.masked_fill_(~input_mask, MASK_VAL)
@@ -252,13 +250,9 @@ class DecoderAttention(nn.Module):
         return out
 
     def _init(self):
-        nn.init.xavier_uniform_(self.to_q.weight)
-        nn.init.xavier_uniform_(self.to_kv.weight)
-        nn.init.xavier_uniform_(self.to_out.weight)
-        if getattr(self.to_q, 'bias', None) is not None:
-            nn.init.constant_(self.to_q.bias, 0)
-        if getattr(self.to_kv, 'bias', None) is not None:
-            nn.init.constant_(self.to_kv.bias, 0)
+        [nn.init.xavier_uniform_(w) for w in [self.to_q.weight, self.to_kv.weight, self.to_out.weight]]
+        if getattr(self.to_q, 'bias', None) is not None: nn.init.constant_(self.to_q.bias, 0)
+        if getattr(self.to_kv, 'bias', None) is not None: nn.init.constant_(self.to_kv.bias, 0)
         nn.init.constant_(self.to_out.bias, 0)
 
 
@@ -299,7 +293,7 @@ class TransformerEncoderBlock(Module):
 class TransformerEncoder(Module):
     def __init__(self, 
                  dim, 
-                 depth=6, 
+                 n_layers=6, 
                  heads=8, 
                  d_ff=None,
                  ff_dropout=0.1, 
@@ -309,9 +303,10 @@ class TransformerEncoder(Module):
                  prenorm=False, 
                  final_norm=None):
         store_attr('dim')
-        encoder_block = TransformerEncoderBlock(dim, heads, causal=causal, d_ff=d_ff, 
-                                    attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, attn_bias=attn_bias)
-        self.layers = _get_clones(encoder_block, depth)
+        self.layers = nn.ModuleList([])    
+        for _ in range(n_layers):
+            self.layers.append(TransformerEncoderBlock(dim, heads, causal=causal, d_ff=d_ff, 
+                                    attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, attn_bias=attn_bias))
         self.norm = None if final_norm is None else final_norm(dim)
         
     def forward(self, x, mask=None):
@@ -376,7 +371,7 @@ class TransformerDecoderBlockV2(nn.Module):
 class TransformerDecoder(Module):
     def __init__(self, 
                  dim, 
-                 depth=6, 
+                 n_layers=6, 
                  heads=8, 
                  d_ff=None, 
                  attn_dropout=0.1, 
@@ -386,12 +381,12 @@ class TransformerDecoder(Module):
                  attn_bias=True, 
                  final_norm=None):
         store_attr('dim')
-        #TODO(Arto) refactor
-        block = TransformerDecoderBlockV2 if comb_attn else TransformerDecoderBlock
-        self.layers = _get_clones(block(dim, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, 
-                                        prenorm=prenorm, attn_bias=attn_bias),
-                                  depth)
+        block = TransformerDecoderBlockV2 if comb_attn else TransformerDecoderBlock            #TODO(Arto) refactor
+        self.layers = nn.ModuleList([])
+        for _ in range(n_layers):
+            self.layers.append(block(dim, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, attn_bias=attn_bias))
         self.norm = None if final_norm is None else final_norm(dim)
+        
     def forward(self, x, context, mask=None, context_mask=None):
         for layer in self.layers: x = layer(x, context, mask, context_mask)
         if self.norm is not None: x = self.norm(x)
@@ -419,6 +414,7 @@ class FixedPositionalEmbedding(Module):
         sinusoid_inp = torch.einsum("i, j -> i j", t, self.inv_freq)
         emb = torch.cat((sinusoid_inp.sin(), sinusoid_inp.cos()), dim=-1)
         return emb[None, :, :]
+    
 #TODO add axial positional encodings
 
 
@@ -451,7 +447,8 @@ class TransformerEmbedding(Module):
         self._init()
         
     def forward(self, x):
-        x = self.emb(x) * self.scale
+        x = self.emb(x)  #* self.scale
+        x *= self.scale 
         x += self.pos_enc(x)
         return self.dropout(x)
     
@@ -469,7 +466,8 @@ class TransformerEncDec(Module):
         * enc_vocab_sz: int - source vocab size 
         * dec_vocab_sz: int - target vocab size
         * dim: int - inner dimension of the model
-        * depth: int (default: 6) 
+        * n_enc_layers: int (default: 6) 
+        * n_dec_layers: int (default: 6) 
         * heads: int (default: 8)
         * max_seq_len: int (default: 512)
         * pad_idx: int - padding token id, if pad_idx is provided, and no mask/context_mask are passed to 
@@ -572,7 +570,7 @@ class TransformerEncDec(Module):
 
     def store_attention(self, layer_ids=None, store_encoder=False, store_decoder=True):
         #defaults to storing attention for all layers
-        layer_ids = default(layer_ids, list(range(self.depth)))
+        layer_ids = default(layer_ids, list(range(self.n_enc_layers)))
         for module in self.children():
             if issubclass(type(module), TransformerEncoder) and store_encoder:
                 for i, l in enumerate(module.layers):
@@ -615,7 +613,7 @@ class TransformerLM(Module):
     Parameters:
         * vocab_sz: int
         * dim: int - inner dimension of the model
-        * depth: int (default: 6) 
+        * n_layers: int (default: 6) 
         * heads: int (default: 8)
         * causal: bool (default: True) - if True does causal masking automatically
         * max_seq_len: int (default: 512)
@@ -696,7 +694,7 @@ class TransformerLM(Module):
 
     def store_attention(self, layer_ids=None):
         #defaults to storing attention for all layers
-        layer_ids = default(layer_ids, list(range(self.depth)))
+        layer_ids = default(layer_ids, list(range(self.n_layers)))
         for module in self.children():
             if issubclass(type(module), (TransformerEncoder, TransformerDecoder)):
                 for i, l in enumerate(module.layers):
