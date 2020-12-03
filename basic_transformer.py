@@ -125,9 +125,11 @@ class Attention(Module):
                  causal = False,
                  mask = None,
                  dropout=0.1, 
-                 bias=True):
-        store_attr('causal, mask, heads', scale=(dim//heads) ** -0.5)
+                 bias=True,
+                 store_attention=False):
+        store_attr('causal, mask, heads, store_attention')
         
+        self.scale=(dim//heads) ** -0.5
         self.to_q = nn.Linear(dim, dim, bias=bias)
         self.to_kv = nn.Linear(dim, dim * 2, bias=bias)
         self.dropout = nn.Dropout(dropout)
