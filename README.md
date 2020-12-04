@@ -38,6 +38,8 @@ Fastai community entry to [2020 Reproducibility Challenge](https://paperswithcod
 
 **WMT14**
 - [Reformer WMT14 vocab](https://github.com/google/trax/tree/a0483a12cb7ebece40b5e302e8e81fd9249c6ef6/trax/models/reformer/testdata)
+- Train Test split: (guess) newstest2013 for validation and newstest2014 for test, in consistence with Vaswani et al. (2017) - from https://arxiv.org/pdf/2009.02070.pdf
+- Tokenizer: [Tensor2Tensor SubWordTextEncoder](https://github.com/tensorflow/tensor2tensor/blob/21dba2c1bdcc7ab582a2bfd8c0885c217963bb4f/tensor2tensor/data_generators/text_encoder.py#L448)
 
 ### Explainers
 - [Yannic K explainer](https://www.youtube.com/watch?v=i4H0kjxrias&t=1s)
