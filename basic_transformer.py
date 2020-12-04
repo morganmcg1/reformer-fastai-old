@@ -491,7 +491,8 @@ class TransformerEncDec(Module):
                  heads=8, 
                  d_ff=None,
                  pad_idx=None, 
-                 tie_weights=True, 
+                 tie_weights=True,
+                 shared_emb = False,
                  attn_dropout=0.1, 
                  ff_dropout=0.1, 
                  emb_dropout=0.1,
@@ -505,8 +506,12 @@ class TransformerEncDec(Module):
         store_attr('max_seq_len, n_enc_layers, n_dec_layers, pad_idx')
         self.enc_emb = TransformerEmbedding(enc_vocab_sz, dim, max_seq_len, dropout=emb_dropout, pos_enc=pos_enc,
                                             axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
-        self.dec_emb = TransformerEmbedding(dec_vocab_sz, dim, max_seq_len, dropout=emb_dropout, pos_enc=pos_enc,
-                                            axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
+        if shared_emb:
+            assert (enc_vocab_sz == dec_vocab_sz), "Encoder and decoder vocab size doesn't match"
+            self.dec_emb = self.emc_emb
+        else:
+            self.dec_emb = TransformerEmbedding(dec_vocab_sz, dim, max_seq_len, dropout=emb_dropout, pos_enc=pos_enc,
+                                                axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
         
         self.encoder = TransformerEncoder(dim, n_enc_layers, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, 
                                           prenorm=prenorm, attn_bias=attn_bias, final_norm=nn.LayerNorm, causal=False)
