@@ -12,9 +12,9 @@ from basic_transformer import *
 # helper classes
 
 class Chunk(nn.Module):
-    def __init__(self, chunks, fn, along_dim = -1):
+    def __init__(self, chunks, fn, dim = -1):
         super().__init__()
-        self.dim = along_dim
+        self.dim = dim
         self.chunks = chunks
         self.fn = fn
 
@@ -25,18 +25,18 @@ class Chunk(nn.Module):
         return torch.cat([self.fn(c, **kwargs) for c in chunks], dim = self.dim)
 
 class ChunkedFeedForward(nn.Module):
-    def __init__(self, d, ff_d=None, chunks=1, dropout=0., along_dim=-1):
+    def __init__(self, d, d_ff=None, chunks=1, dropout=0., dim=-1):
         super().__init__()
-        ff_d = default(ff_d, 4*d)
+        d_ff = default(d_ff, 4*d)
         self.net = nn.Sequential(
-            nn.Linear(d, ff_d),
+            nn.Linear(d, d_ff),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(ff_d, d),
+            nn.Linear(d_ff, d),
             nn.Dropout(dropout)
             )
         self.chunks = chunks
-        self.dim = along_dim
+        self.dim = dim
     def forward(self, x):
         if self.chunks == 1:
             return self.net(x)
@@ -204,11 +204,11 @@ class ReversibleSequence(nn.Module):
 # mess for now; will clean up after LSHAttention args finalized
 class ReformerEncoder(nn.Module):
     def __init__(self, 
-                 dim, 
+                 d_model, 
                  depth, 
                  heads = 8, 
                  max_seq_len = 512,              
-                 dim_head = None, 
+                 d_head = None, 
                  bucket_size = 64, 
                  n_hashes = 8, 
                  ff_chunks = 100, 
@@ -219,7 +219,7 @@ class ReformerEncoder(nn.Module):
                  post_attn_dropout = 0.,
                  lsh_dropout = 0., 
                  ff_dropout = 0.,  
-                 ff_d = None, 
+                 d_ff = None, 
                  layer_dropout = 0., 
                  lsh_attend_across_buckets = True, 
                  lsh_allow_duplicate_attention = True, 
@@ -231,21 +231,20 @@ class ReformerEncoder(nn.Module):
                  n_local_attn_heads = 0,
                  prenorm=True):
         super().__init__()
-        self.dim = dim
+        self.d_model = d_model
         self.depth = depth
 
         self.bucket_size = bucket_size
         # self.full_attn_thres = full_attn_thres
         
         # use regular attention for now
-        get_attn = lambda: Attention(dim, heads, causal=causal, dropout=attn_dropout)
-        # get_attn = lambda: LSHSelfAttention(dim, heads, bucket_size, n_hashes, causal = causal, dim_head = dim_head, dropout = lsh_dropout, post_attn_dropout = post_attn_dropout, attn_chunks = attn_chunks, allow_duplicate_attention = lsh_allow_duplicate_attention, attend_across_buckets = lsh_attend_across_buckets, random_rotations_per_head = random_rotations_per_head, num_mem_kv = num_mem_kv, use_full_attn = use_full_attn, full_attn_thres = full_attn_thres, one_value_head = one_value_head, n_local_attn_heads = n_local_attn_heads)
-        # get_ff = lambda: Chunk(ff_chunks, FeedForward(dim, d_ff=ff_d, dropout=ff_dropout), along_dim = -2)
-        get_ff = lambda: ChunkedFeedForward(dim, ff_d, chunks=ff_chunks, dropout=ff_dropout, along_dim=1)
+        get_attn = lambda: Attention(d_model, heads, causal=causal, dropout=attn_dropout)
+        # get_attn = lambda: LSHSelfAttention(d_model, heads, bucket_size, n_hashes, causal = causal, d_head = d_head, dropout = lsh_dropout, post_attn_dropout = post_attn_dropout, attn_chunks = attn_chunks, allow_duplicate_attention = lsh_allow_duplicate_attention, attend_across_buckets = lsh_attend_across_buckets, random_rotations_per_head = random_rotations_per_head, num_mem_kv = num_mem_kv, use_full_attn = use_full_attn, full_attn_thres = full_attn_thres, one_value_head = one_value_head, n_local_attn_heads = n_local_attn_heads)
+        # get_ff = lambda: Chunk(ff_chunks, FeedForward(d_model, d_ff=d_ff, dropout=ff_dropout), dim = -2)
+        get_ff = lambda: ChunkedFeedForward(d_model, d_ff, chunks=ff_chunks, dropout=ff_dropout, dim=1)
 
         blocks = []
-        #TODO: find where ReZero proposed
-        #residual_fn_wrapper = ReZero if use_rezero else partial(PreNorm, norm_type, dim)
+        #residual_fn_wrapper = ReZero if use_rezero else partial(PreNorm, norm_type, d_model)
         norm_wrapper = PreNorm if prenorm else PostNorm
         
         for ind in range(depth):
@@ -254,8 +253,8 @@ class ReformerEncoder(nn.Module):
             attn = get_attn()
             ff = get_ff()
 
-            f = norm_wrapper(dim, attn)
-            g = norm_wrapper(dim, ff)
+            f = norm_wrapper(d_model, attn)
+            g = norm_wrapper(d_model, ff)
 
             blocks.append(nn.ModuleList([f, g]))
         # send_signal is not implemented for now
@@ -271,11 +270,11 @@ class ReformerEncoder(nn.Module):
 
 class ReformerDecoder(nn.Module):
     def __init__(self, 
-                 dim, 
+                 d_model, 
                  depth = 6, 
                  heads = 8,  
                  max_seq_len = 512,
-                 dim_head = None, 
+                 d_head = None, 
                  bucket_size = 64, 
                  n_hashes = 8, 
                  ff_chunks = 100, 
@@ -285,25 +284,25 @@ class ReformerDecoder(nn.Module):
                  attn_dropout = 0.,
                  post_attn_dropout = 0.,
                  ff_dropout = 0.,  
-                 ff_d = None, 
+                 d_ff = None, 
                  layer_dropout = 0.,
                  prenorm=True,
                  reverse_thres = 0,
                  ):
         super().__init__()
-        self.dim = dim
+        self.d_model = d_model
         self.depth = depth
         
         # use regular attention for now
-        get_attn = lambda: DecoderAttention(dim, heads, causal=causal, dropout=attn_dropout)
-        get_ff = lambda: ChunkedFeedForward(dim, ff_d, chunks=ff_chunks, dropout=ff_dropout, along_dim=1)
+        get_attn = lambda: DecoderAttention(d_model, heads, causal=causal, dropout=attn_dropout)
+        get_ff = lambda: ChunkedFeedForward(d_model, d_ff, chunks=ff_chunks, dropout=ff_dropout, dim=1)
         norm_wrapper = PreNorm if prenorm else PostNorm
         blocks = []
         for ind in range(depth):
             layer_num = ind + 1
             
-            f = norm_wrapper(dim, get_attn())
-            g = norm_wrapper(dim, get_ff())
+            f = norm_wrapper(d_model, get_attn())
+            g = norm_wrapper(d_model, get_ff())
 
             blocks.append(nn.ModuleList([f, g]))
         # send_signal is not implemented for now
@@ -319,12 +318,12 @@ class ReformerDecoder(nn.Module):
 class ReformerLM(nn.Module):#, TransformerLM):
     def __init__(self,
                  vocab_sz,
-                 dim, 
+                 d_model, 
                  depth = 6,
                  tie_weights = True,
                  max_seq_len = 512, 
                  heads = 8, 
-                 dim_head = None, 
+                 d_head = None, 
                  bucket_size = 64, 
                  n_hashes = 8, 
                  ff_chunks = 100, 
@@ -335,7 +334,7 @@ class ReformerLM(nn.Module):#, TransformerLM):
                  post_attn_dropout = 0.,
                  lsh_dropout = 0., 
                  ff_dropout = 0.,  
-                 ff_d = None, 
+                 d_ff = None, 
                  layer_dropout = 0., 
                  lsh_attend_across_buckets = True, 
                  lsh_allow_duplicate_attention = True, 
@@ -347,12 +346,12 @@ class ReformerLM(nn.Module):#, TransformerLM):
                  n_local_attn_heads = 0,
                  prenorm=True):
         super().__init__()
-        self.emb = TransformerEmbedding(vocab_sz, dim, max_seq_len=max_seq_len)
+        self.emb = TransformerEmbedding(vocab_sz, d_model, max_seq_len=max_seq_len)
         #temp line to mark we need to pass more args to encoder
         kwargs = {}
-        self.encoder = ReformerEncoder(dim, depth, max_seq_len=max_seq_len, causal=causal, reverse_thres=reverse_thres,
+        self.encoder = ReformerEncoder(d_model, depth, max_seq_len=max_seq_len, causal=causal, reverse_thres=reverse_thres,
                                         **kwargs)
-        self.proj = nn.Linear(dim, vocab_sz)
+        self.proj = nn.Linear(d_model, vocab_sz)
         if tie_weights: self.proj.weight = self.emb.emb.weight
     def forward(self, x, mask=None):
         x = self.emb(x)
@@ -368,7 +367,7 @@ class ReformerEncDec(nn.Module):
     Parameters:
         * enc_vocab_sz: int - source vocab size 
         * dec_vocab_sz: int - target vocab size
-        * dim: int - inner dimension of the model
+        * d_model: int - inner dimension of the model
         * depth: int (default: 6) 
         * heads: int (default: 8)
         * max_seq_len: int (default: 512)
@@ -387,7 +386,7 @@ class ReformerEncDec(nn.Module):
     def __init__(self,
                  enc_vocab_sz, 
                  dec_vocab_sz, 
-                 dim, 
+                 d_model, 
                  depth=6, 
                  heads=8, 
                  max_seq_len=512, 
@@ -397,7 +396,7 @@ class ReformerEncDec(nn.Module):
                  attn_dropout=0.1, 
                  ff_dropout=0.1,
                  pos_enc='absolute', 
-                 ff_d=None, 
+                 d_ff=None, 
                  prenorm=False, 
                  axial_shape=None, 
                  axial_emb_dims=None,
@@ -407,13 +406,13 @@ class ReformerEncDec(nn.Module):
         self.max_seq_len = max_seq_len
         self.depth = depth
         self.pad_idx = pad_idx
-        self.enc_emb = TransformerEmbedding(enc_vocab_sz, dim, max_seq_len, dropout=emb_dropout,
+        self.enc_emb = TransformerEmbedding(enc_vocab_sz, d_model, max_seq_len, dropout=emb_dropout,
                                             axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
-        self.dec_emb = TransformerEmbedding(dec_vocab_sz, dim, max_seq_len, dropout=emb_dropout,
+        self.dec_emb = TransformerEmbedding(dec_vocab_sz, d_model, max_seq_len, dropout=emb_dropout,
                                             axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
-        self.encoder = ReformerEncoder(dim, depth, heads, ff_d=ff_d, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, reverse_thres=reverse_thres)
-        self.decoder = ReformerDecoder(dim, depth, heads, ff_d=ff_d, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, reverse_thres=reverse_thres)
-        self.proj = nn.Linear(dim, dec_vocab_sz)
+        self.encoder = ReformerEncoder(d_model, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, reverse_thres=reverse_thres)
+        self.decoder = ReformerDecoder(d_model, depth, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, reverse_thres=reverse_thres)
+        self.proj = nn.Linear(d_model, dec_vocab_sz)
         if tie_weights: self.proj.weight = self.dec_emb.emb.weight
 
     def forward(self, src, tgt, src_mask = None, tgt_mask = None):
