@@ -49,4 +49,5 @@ Fastai community entry to [2020 Reproducibility Challenge](https://paperswithcod
 - [Coursera Attention Models in NLP course, with Reformer co-author](https://www.coursera.org/learn/attention-models-in-nlp)
 - [@hallvagi Attention blogpost](https://hallvagi.github.io/dl-explorer/fastai/attention/lstm/2020/06/29/Attention.html)
 - [The Transformer Family by @lilianweng](https://lilianweng.github.io/lil-log/2020/04/07/the-transformer-family.html)
+- [A Family of Attention Mechanisms bu @lilianweng](https://lilianweng.github.io/lil-log/2018/06/24/attention-attention.html#a-family-of-attention-mechanisms)
 
