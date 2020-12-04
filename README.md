@@ -9,14 +9,14 @@ Fastai community entry to [2020 Reproducibility Challenge](https://paperswithcod
 
 ## Resources
 
-### Author's Resources
+### Author's Code and Resources
 - [Reformer Paper](https://openreview.net/pdf?id=rkgNKkHtvB)
 - [Authors ICLR video](https://iclr.cc/virtual_2020/poster_rkgNKkHtvB.html)
 - [Google Blog](https://ai.googleblog.com/2020/01/reformer-efficient-transformer.html)
 - [Authors code (TRAX)](https://github.com/google/trax/tree/master/trax/models/reformer)
 - [Reformer enwik8 model and training config](https://github.com/google/trax/blob/f8024e8057599b92fce82842f342cb3d39c8f405/trax/supervised/configs/reformer_enwik8.gin)
 
-### Code
+### More Code
 - [@lucidrain’s Reformer code](https://github.com/lucidrains/reformer-pytorch/)
 - [HuggingFace: Reformer source code](https://github.com/huggingface/transformers/blob/a1bbcf3f6c20e15fe799a8659d6b7bd36fdf11ed/src/transformers/modeling_reformer.py)
     - [Reformer enwik8 configs](https://github.com/google/trax/blob/master/trax/supervised/configs/reformer_enwik8.gin)
