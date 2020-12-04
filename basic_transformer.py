@@ -59,9 +59,9 @@ _sampler = {
 }
 
 # axial position helpers (subjected to review)
-def get_axial_dims(dim, n):
-    res = (dim//n, )*(n-1)
-    res += (dim-sum(res), )
+def get_axial_dims(d_emb, n):
+    res = (d_emb//n, )*(n-1)
+    res += (d_emb-sum(res), )
     return res
 
 """## Helpers and FeedForward"""
@@ -76,9 +76,9 @@ class Residual(Module):
 
 # Added *args, **kwargs here to pass context and masks
 class PostNorm(Module):
-    def __init__(self, dim, fn):
+    def __init__(self, d_model, fn):
         store_attr('fn')
-        self.norm = nn.LayerNorm(dim)
+        self.norm = nn.LayerNorm(d_model)
 
     def forward(self, x, *args, **kwargs):
         x = self.fn(x, *args, **kwargs)
@@ -86,9 +86,9 @@ class PostNorm(Module):
 
     
 class PreNorm(Module):
-    def __init__(self, dim, fn):
+    def __init__(self, d_model, fn):
         store_attr('fn')
-        self.norm = nn.LayerNorm(dim)
+        self.norm = nn.LayerNorm(d_model)
 
     def forward(self, x, *args, **kwargs):
         x = self.norm(x)
@@ -96,10 +96,10 @@ class PreNorm(Module):
 
     
 class FeedForward(Module):
-    def __init__(self, dim, d_ff=None, dropout=0.):
-        d_ff = default(d_ff, 4 * dim)
-        layers = [nn.Linear(dim, d_ff), nn.GELU(), nn.Dropout(dropout),
-                    nn.Linear(d_ff, dim), nn.Dropout(dropout)]
+    def __init__(self, d_model, d_ff=None, dropout=0.):
+        d_ff = default(d_ff, 4 * d_model)
+        layers = [nn.Linear(d_model, d_ff), nn.GELU(), nn.Dropout(dropout),
+                    nn.Linear(d_ff, d_model), nn.Dropout(dropout)]
         self.net = nn.Sequential(*layers)
         self._init()
         
@@ -116,7 +116,7 @@ MASK_VAL = -5e4 # instead of float('-inf') to make fp16 work
 
 class Attention(Module):
     def __init__(self, 
-                 dim, 
+                 d_model, 
                  heads = 8, 
                  causal = False,
                  mask = None,
@@ -125,11 +125,11 @@ class Attention(Module):
                  store_attention=False):
         store_attr('causal, mask, heads, store_attention')
         
-        self.scale=(dim//heads) ** -0.5
-        self.to_q = nn.Linear(dim, dim, bias=bias)
-        self.to_kv = nn.Linear(dim, dim * 2, bias=bias)
+        self.scale=(d_model//heads) ** -0.5
+        self.to_q = nn.Linear(d_model, d_model, bias=bias)
+        self.to_kv = nn.Linear(d_model, d_model * 2, bias=bias)
         self.dropout = nn.Dropout(dropout)
-        self.to_out = nn.Linear(dim, dim)
+        self.to_out = nn.Linear(d_model, d_model)
         
         self._init()
 
@@ -185,7 +185,7 @@ class Attention(Module):
 # may be replaced with generalized attention in future
 class DecoderAttention(nn.Module):
     def __init__(self, 
-                 dim, 
+                 d_model, 
                  heads = 8, 
                  causal = False,
                  mask = None,
@@ -196,13 +196,13 @@ class DecoderAttention(nn.Module):
         self.store_attention = False
         self.mask = mask #??
         self.heads = heads
-        self.scale = (dim//heads) ** -0.5
+        self.scale = (d_model//heads) ** -0.5
         
-        self.to_q = nn.Linear(dim, dim, bias = bias)
-        self.to_kv = nn.Linear(dim, dim * 2, bias = bias)
+        self.to_q = nn.Linear(d_model, d_model, bias = bias)
+        self.to_kv = nn.Linear(d_model, d_model * 2, bias = bias)
         self.dropout = nn.Dropout(dropout)
 
-        self.to_out = nn.Linear(dim, dim)
+        self.to_out = nn.Linear(d_model, d_model)
 
         self._init()
 
@@ -266,7 +266,7 @@ class TransformerEncoderBlock(Module):
     Bacis transformer encoder block. Consists of multi-head attention and positional feedforward layers
     """
     def __init__(self, 
-                 dim, 
+                 d_model, 
                  heads = 8, 
                  d_ff = None, 
                  attn_dropout = 0.1,
@@ -277,11 +277,11 @@ class TransformerEncoderBlock(Module):
                  prenorm=False):
         store_attr('attn_dropout') # mb separate argument attn_post_dropout
         if prenorm:
-            self.attn = Residual(PreNorm(dim, Attention(dim, heads=heads, causal=causal, dropout=attn_dropout, bias=attn_bias)))
-            self.ff = Residual(PreNorm(dim, FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
+            self.attn = Residual(PreNorm(d_model, Attention(d_model, heads=heads, causal=causal, dropout=attn_dropout, bias=attn_bias)))
+            self.ff = Residual(PreNorm(d_model, FeedForward(d_model, d_ff=d_ff, dropout=ff_dropout)))
         else:
-            self.attn = PostNorm(dim, Residual(Attention(dim, heads=heads, causal=causal, dropout=attn_dropout, bias=attn_bias)))
-            self.ff = PostNorm(dim, Residual(FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
+            self.attn = PostNorm(d_model, Residual(Attention(d_model, heads=heads, causal=causal, dropout=attn_dropout, bias=attn_bias)))
+            self.ff = PostNorm(d_model, Residual(FeedForward(d_model, d_ff=d_ff, dropout=ff_dropout)))
         self.dropout = nn.Dropout(attn_dropout)
         
     def forward(self, x, mask=None): #? more args
@@ -292,7 +292,7 @@ class TransformerEncoderBlock(Module):
     
 class TransformerEncoder(Module):
     def __init__(self, 
-                 dim, 
+                 d_model, 
                  n_layers=6, 
                  heads=8, 
                  d_ff=None,
@@ -302,12 +302,12 @@ class TransformerEncoder(Module):
                  causal=False, 
                  prenorm=False, 
                  final_norm=None):
-        store_attr('dim')
+        store_attr('d_model')
         self.layers = nn.ModuleList([])    
         for _ in range(n_layers):
-            self.layers.append(TransformerEncoderBlock(dim, heads, causal=causal, d_ff=d_ff, 
+            self.layers.append(TransformerEncoderBlock(d_model, heads, causal=causal, d_ff=d_ff, 
                                     attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, attn_bias=attn_bias))
-        self.norm = None if final_norm is None else final_norm(dim)
+        self.norm = None if final_norm is None else final_norm(d_model)
         
     def forward(self, x, mask=None):
         for layer in self.layers: x = layer(x, mask=mask)
@@ -321,7 +321,7 @@ class TransformerEncoder(Module):
 
 class TransformerDecoderBlock(Module):
     def __init__(self, 
-                 dim, 
+                 d_model, 
                  heads = 8, 
                  d_ff = None,
                  attn_dropout = 0.1, 
@@ -331,13 +331,13 @@ class TransformerDecoderBlock(Module):
                  prenorm=False):
         store_attr('attn_dropout')     # mb separate argument attn_post_dropout
         if prenorm:
-            self.attn = Residual(PreNorm(dim, Attention(dim, heads=heads, causal=True, dropout=attn_dropout, bias=attn_bias)))
-            self.cross = Residual(PreNorm(dim, Attention(dim, heads=heads, causal=False, dropout=attn_dropout, bias=attn_bias)))
-            self.ff = Residual(PreNorm(dim, FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
+            self.attn = Residual(PreNorm(d_model, Attention(d_model, heads=heads, causal=True, dropout=attn_dropout, bias=attn_bias)))
+            self.cross = Residual(PreNorm(d_model, Attention(d_model, heads=heads, causal=False, dropout=attn_dropout, bias=attn_bias)))
+            self.ff = Residual(PreNorm(d_model, FeedForward(d_model, d_ff=d_ff, dropout=ff_dropout)))
         else:
-            self.attn = PostNorm(dim, Residual(Attention(dim, heads=heads, causal=True, dropout=attn_dropout, bias=attn_bias)))
-            self.cross = PostNorm(dim, Residual(Attention(dim, heads=heads, causal=False, dropout=attn_dropout, bias=attn_bias)))
-            self.ff = PostNorm(dim, Residual(FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
+            self.attn = PostNorm(d_model, Residual(Attention(d_model, heads=heads, causal=True, dropout=attn_dropout, bias=attn_bias)))
+            self.cross = PostNorm(d_model, Residual(Attention(d_model, heads=heads, causal=False, dropout=attn_dropout, bias=attn_bias)))
+            self.ff = PostNorm(d_model, Residual(FeedForward(d_model, d_ff=d_ff, dropout=ff_dropout)))
         self.dropout = nn.Dropout(attn_dropout)
         
     def forward(self, x, context, mask=None, context_mask=None):
@@ -349,17 +349,17 @@ class TransformerDecoderBlock(Module):
 
     
 class TransformerDecoderBlockV2(nn.Module):
-    def __init__(self, dim, heads = 8, mask = None, d_ff=None,
+    def __init__(self, d_model, heads = 8, mask = None, d_ff=None,
                  attn_dropout=0.1, ff_dropout=0.1, attn_bias=True,
                  prenorm=False):
         super().__init__()
         self.attn_dropout = attn_dropout # mb separate argument attn_post_dropout
         if prenorm:
-            self.attn = Residual(PreNorm(dim, DecoderAttention(dim, heads=heads, causal=True, dropout=attn_dropout, bias=attn_bias)))
-            self.ff = Residual(PreNorm(dim, FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
+            self.attn = Residual(PreNorm(d_model, DecoderAttention(d_model, heads=heads, causal=True, dropout=attn_dropout, bias=attn_bias)))
+            self.ff = Residual(PreNorm(d_model, FeedForward(d_model, d_ff=d_ff, dropout=ff_dropout)))
         else:
-            self.attn = PostNorm(dim, Residual(DecoderAttention(dim, heads=heads, causal=True, dropout=attn_dropout, bias=attn_bias)))
-            self.ff = PostNorm(dim, Residual(FeedForward(dim, d_ff=d_ff, dropout=ff_dropout)))
+            self.attn = PostNorm(d_model, Residual(DecoderAttention(d_model, heads=heads, causal=True, dropout=attn_dropout, bias=attn_bias)))
+            self.ff = PostNorm(d_model, Residual(FeedForward(d_model, d_ff=d_ff, dropout=ff_dropout)))
         
     def forward(self, x, context, mask=None, context_mask=None):
         out = self.attn(x, context, mask=mask, context_mask=context_mask)
@@ -370,7 +370,7 @@ class TransformerDecoderBlockV2(nn.Module):
     
 class TransformerDecoder(Module):
     def __init__(self, 
-                 dim, 
+                 d_model, 
                  n_layers=6, 
                  heads=8, 
                  d_ff=None, 
@@ -380,12 +380,12 @@ class TransformerDecoder(Module):
                  comb_attn=False, 
                  attn_bias=True, 
                  final_norm=None):
-        store_attr('dim')
+        store_attr('d_model')
         block = TransformerDecoderBlockV2 if comb_attn else TransformerDecoderBlock            #TODO(Arto) refactor
         self.layers = nn.ModuleList([])
         for _ in range(n_layers):
-            self.layers.append(block(dim, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, attn_bias=attn_bias))
-        self.norm = None if final_norm is None else final_norm(dim)
+            self.layers.append(block(d_model, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, attn_bias=attn_bias))
+        self.norm = None if final_norm is None else final_norm(d_model)
         
     def forward(self, x, context, mask=None, context_mask=None):
         for layer in self.layers: x = layer(x, context, mask, context_mask)
@@ -396,8 +396,8 @@ class TransformerDecoder(Module):
 # from https://github.com/lucidrains/reformer-pytorch/blob/master/reformer_pytorch/reformer_pytorch.py#L609
 
 class AbsolutePositionalEmbedding(Module):
-    def __init__(self, dim, max_seq_len):
-        self.emb = nn.Embedding(max_seq_len, dim)
+    def __init__(self, d_emb, max_seq_len):
+        self.emb = nn.Embedding(max_seq_len, d_emb)
 
     def forward(self, x):
         t = torch.arange(x.shape[1], device=x.device)
@@ -405,8 +405,8 @@ class AbsolutePositionalEmbedding(Module):
 
     
 class FixedPositionalEmbedding(Module):
-    def __init__(self, dim):
-        inv_freq = 1. / (10000 ** (torch.arange(0, dim, 2).float() / dim))
+    def __init__(self, d_emb):
+        inv_freq = 1. / (10000 ** (torch.arange(0, d_emb, 2).float() / d_emb))
         self.register_buffer('inv_freq', inv_freq)
 
     def forward(self, x):
@@ -425,25 +425,25 @@ class TransformerEmbedding(Module):
     """
     def __init__(self, 
                  emb_sz, 
-                 dim, 
+                 d_emb, 
                  max_seq_len=512, 
                  dropout=0., 
                  pos_enc='absolute', 
                  axial_shape=None, 
                  axial_emb_dims=None):
-        store_attr('dim')
-        self.scale = dim ** 0.5
-        self.std = 0.02    # fairseq: dim ** -0.5, fastai: 0.01
-        self.emb = nn.Embedding(emb_sz, dim)
+        store_attr('d_emb')
+        self.scale = d_emb ** 0.5
+        self.std = 0.02    # fairseq: d_emb ** -0.5, fastai: 0.01
+        self.emb = nn.Embedding(emb_sz, d_emb)
         self.dropout = nn.Dropout(dropout)
         
-        if pos_enc == 'absolute': self.pos_enc = AbsolutePositionalEmbedding(dim, max_seq_len)
-        elif pos_enc == 'fixed': self.pos_enc = FixedPositionalEmbedding(dim)
+        if pos_enc == 'absolute': self.pos_enc = AbsolutePositionalEmbedding(d_emb, max_seq_len)
+        elif pos_enc == 'fixed': self.pos_enc = FixedPositionalEmbedding(d_emb)
         elif pos_enc == 'axial':
             assert axial_shape is not None
             assert reduce(mul, axial_shape) == max_seq_len
-            axial_emb_dims = default(axial_emb_dims, get_axial_dims(dim, len(axial_shape)))
-            self.pos_enc = AxialPositionalEmbedding(dim, axial_shape, axial_emb_dims)
+            axial_emb_dims = default(axial_emb_dims, get_axial_dims(d_emb, len(axial_shape)))
+            self.pos_enc = AxialPositionalEmbedding(d_emb, axial_shape, axial_emb_dims)
         self._init()
         
     def forward(self, x):
@@ -459,13 +459,14 @@ class TransformerEmbedding(Module):
 #TODO test weight tying
 # Note on weight tying: it's done like here in fastai AWD_LSTM model
 # Lucidrains does it with custom MatrixMultiply module https://github.com/lucidrains/reformer-pytorch/blob/master/reformer_pytorch/reformer_pytorch.py#L106
+#TODO: update docstrings
 class TransformerEncDec(Module):
     """
     Basic Transformer Encoder-Decoder model
     Parameters:
         * enc_vocab_sz: int - source vocab size 
         * dec_vocab_sz: int - target vocab size
-        * dim: int - inner dimension of the model
+        * d_model: int - inner dimension of the model
         * n_enc_layers: int (default: 6) 
         * n_dec_layers: int (default: 6) 
         * heads: int (default: 8)
@@ -485,7 +486,7 @@ class TransformerEncDec(Module):
     def __init__(self, 
                  enc_vocab_sz, 
                  dec_vocab_sz, 
-                 dim, 
+                 d_model, 
                  n_enc_layers=6, 
                  n_dec_layers=6, 
                  heads=8, 
@@ -504,20 +505,20 @@ class TransformerEncDec(Module):
                  axial_shape=None, 
                  axial_emb_dims=None):
         store_attr('max_seq_len, n_enc_layers, n_dec_layers, pad_idx')
-        self.enc_emb = TransformerEmbedding(enc_vocab_sz, dim, max_seq_len, dropout=emb_dropout, pos_enc=pos_enc,
+        self.enc_emb = TransformerEmbedding(enc_vocab_sz, d_model, max_seq_len, dropout=emb_dropout, pos_enc=pos_enc,
                                             axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
         if shared_emb:
             assert (enc_vocab_sz == dec_vocab_sz), "Encoder and decoder vocab size doesn't match"
             self.dec_emb = self.emc_emb
         else:
-            self.dec_emb = TransformerEmbedding(dec_vocab_sz, dim, max_seq_len, dropout=emb_dropout, pos_enc=pos_enc,
+            self.dec_emb = TransformerEmbedding(dec_vocab_sz, d_model, max_seq_len, dropout=emb_dropout, pos_enc=pos_enc,
                                                 axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
         
-        self.encoder = TransformerEncoder(dim, n_enc_layers, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, 
+        self.encoder = TransformerEncoder(d_model, n_enc_layers, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, 
                                           prenorm=prenorm, attn_bias=attn_bias, final_norm=nn.LayerNorm, causal=False)
-        self.decoder = TransformerDecoder(dim, n_dec_layers, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, 
+        self.decoder = TransformerDecoder(d_model, n_dec_layers, heads, d_ff=d_ff, attn_dropout=attn_dropout, ff_dropout=ff_dropout, 
                                           prenorm=prenorm, comb_attn=comb_attn, attn_bias=attn_bias, final_norm=nn.LayerNorm)
-        self.proj = nn.Linear(dim, dec_vocab_sz)
+        self.proj = nn.Linear(d_model, dec_vocab_sz)
         if tie_weights: self.proj.weight = self.dec_emb.emb.weight
 
     def forward(self, src, tgt, src_mask=None, tgt_mask=None):
@@ -617,7 +618,7 @@ class TransformerLM(Module):
     Basic Transformer for language modelling
     Parameters:
         * vocab_sz: int
-        * dim: int - inner dimension of the model
+        * d_model: int - inner dimension of the model
         * n_layers: int (default: 6) 
         * heads: int (default: 8)
         * causal: bool (default: True) - if True does causal masking automatically
@@ -632,7 +633,7 @@ class TransformerLM(Module):
     """
     def __init__(self, 
                  vocab_sz, 
-                 dim, 
+                 d_model, 
                  n_layers=6,
                  heads=8,
                  d_ff=None,
@@ -649,12 +650,12 @@ class TransformerLM(Module):
                  prenorm=False,
                  attn_bias=True):
         store_attr('max_seq_len, n_layers, pad_idx')
-        self.emb = TransformerEmbedding(vocab_sz, dim, max_seq_len, dropout=emb_dropout, pos_enc=pos_enc,
+        self.emb = TransformerEmbedding(vocab_sz, d_model, max_seq_len, dropout=emb_dropout, pos_enc=pos_enc,
                                         axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
-        self.tfmr = TransformerEncoder(dim, n_layers, heads, causal=causal, d_ff=d_ff, 
+        self.tfmr = TransformerEncoder(d_model, n_layers, heads, causal=causal, d_ff=d_ff, 
                                        attn_dropout=attn_dropout, ff_dropout=ff_dropout,
                                        prenorm=prenorm, attn_bias=attn_bias, final_norm=nn.LayerNorm)
-        self.proj = nn.Linear(dim, vocab_sz)
+        self.proj = nn.Linear(d_model, vocab_sz)
         if tie_weights: self.proj.weight = self.emb.emb.weight
         
     def forward(self, x, mask=None):
