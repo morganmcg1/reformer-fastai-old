@@ -138,9 +138,9 @@ class Attention(Module):
         
         kv_input = default(context, x)
         q = self.to_q(x)
-        kv = self.to_kv(kv_input).chunk(2, dim = -1)
+        k, v = self.to_kv(kv_input).chunk(2, dim = -1)
 
-        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), (q, *kv))
+        q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), (q, k, v))
         
         # boolean input_mask is False at positions not to attend to
         input_mask = None
@@ -174,7 +174,9 @@ class Attention(Module):
         out = torch.einsum('b h i j, b h j d -> b h i d', attn, v)
         out = rearrange(out, 'b h n d -> b n (h d)')
         return  self.to_out(out)  #out = self.dropout(out) # option for more dropout here
-    
+    #TODO
+    def _compute_attention(q, k, v, mask):
+        pass
     def _init(self):
         [nn.init.xavier_uniform_(w) for w in [self.to_q.weight, self.to_kv.weight, self.to_out.weight]]
         if getattr(self.to_q, 'bias', None) is not None: nn.init.constant_(self.to_q.bias, 0)
