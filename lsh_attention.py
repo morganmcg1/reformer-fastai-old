@@ -476,12 +476,19 @@ class ReformerEncoder(Module):
                  causal=False, 
                  prenorm=False, 
                  final_norm=None,
-                 full_attn=False):
+                 full_attn=False,
+                 bucket_size = 64,                    # reccomended default from paper/lucid
+                 n_hashes = 8,                        # reccomended default from paper/lucid
+                 attend_across_buckets = False,      
+                 allow_duplicate_attention = False,   # Penalize multiple qk-v pairs in same attention chunk or not
+                 **kwargs):
         store_attr('d_model')
         self.layers = nn.ModuleList([])    
         for _ in range(n_layers):
             self.layers.append(ReformerEncoderBlock(d_model, heads, causal=causal, d_ff=d_ff, full_attn=full_attn, 
-                                    attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, attn_bias=attn_bias))
+                                    attn_dropout=attn_dropout, ff_dropout=ff_dropout, prenorm=prenorm, attn_bias=attn_bias,
+                                    bucket_size=bucket_size, n_hashes=n_hashes, attend_across_buckets=attend_across_buckets,
+                                    allow_duplicate_attention=allow_duplicate_attention))
         self.norm = None if final_norm is None else final_norm(d_model)
         
     def forward(self, x, mask=None):
@@ -490,46 +497,72 @@ class ReformerEncoder(Module):
         return x
 
 
-class ReformerLM(nn.Module):
+class TransformerLM(Module):
     """
     Basic Transformer for language modelling
     Parameters:
         * vocab_sz: int
-        * dim: int - inner dimension of the model
-        * depth: int (default: 6) 
+        * d_model: int - inner dimension of the model
+        * n_layers: int (default: 6) 
         * heads: int (default: 8)
+        * d_ff: int - inner dimension of the pointwise FeedForward net, if None defaults to 4*d_model
+        * attn_dropout: float - attention dropout
+        * ff_dropout: float - feed-forward dropout
+        * emb_dropout: float - embedding dropout
         * causal: bool (default: True) - if True does causal masking automatically
         * max_seq_len: int (default: 512)
         * tie_weights: bool - if True target embedding weights are used for computation output projection
+        * prenorm: bool - wether to use PreNorm or PostNorm
+        * attn_bias: bool - wether to allow biases in attention projection layers
+        * pad_idx: int - padding token id, required for autogeneration of padding mask
         * pos_enc: str from {'absolute', 'fixed', 'axial'} - type of positional encoding to use
+        * axial_shape: tuple - required if 'axial' positional encoding are used, should be factors of 
+                max_seq_len
+        * axial_emb_dims: tuple - [optional] axial embedding components, should sum to d_model
     Inputs:
         * x - input ids, shape [bs, sl]
         * mask - optional boolean mask, shape [bs, sl]
     Returns:
         * logits - target token logits, shape [bs, sl, vocab_sz]
     """
-    def __init__(self, vocab_sz, dim, depth=6, heads=8, causal=True,
-                 max_seq_len=512, tie_weights=True, d_ff=None,
-                 attn_dropout=0.1, ff_dropout=0.1, emb_dropout=0.1,
-                 pos_enc='absolute', pad_idx=None, prenorm=False,
-                 axial_shape=None, axial_emb_dims=None, attn_bias=True,
-                 full_attn = False):
-        super().__init__()
-        self.max_seq_len = max_seq_len
-        self.depth = depth
-        self.pad_idx = pad_idx
-        self.emb = TransformerEmbedding(vocab_sz, dim, max_seq_len, dropout=emb_dropout, pos_enc=pos_enc,
+    def __init__(self, 
+                 vocab_sz, 
+                 d_model, 
+                 n_layers=6,
+                 heads=8,
+                 d_ff=None,
+                 attn_dropout=0.1,
+                 ff_dropout=0.1,
+                 emb_dropout=0.1,
+                 tie_weights=True,
+                 causal=True,
+                 pos_enc='absolute',
+                 max_seq_len=512,
+                 axial_shape=None,
+                 axial_emb_dims=None,
+                 pad_idx=None,
+                 prenorm=False,
+                 attn_bias=True,
+                 full_attn=False,
+                 bucket_size = 64,                    # reccomended default from paper/lucid
+                 n_hashes = 8,                        # reccomended default from paper/lucid
+                 attend_across_buckets = False,      
+                 allow_duplicate_attention = False):
+        store_attr('max_seq_len, n_layers, pad_idx')
+        self.emb = TransformerEmbedding(vocab_sz, d_model, max_seq_len, dropout=emb_dropout, pos_enc=pos_enc,
                                         axial_shape=axial_shape, axial_emb_dims=axial_emb_dims)
-        self.tfmr = ReformerEncoder(dim, depth, heads, causal=causal, d_ff=d_ff, full_attn=False,
+        self.tfmr = ReformerEncoder(d_model, n_layers, heads, causal=causal, d_ff=d_ff, 
                                        attn_dropout=attn_dropout, ff_dropout=ff_dropout,
-                                       prenorm=prenorm, attn_bias=attn_bias, final_norm=nn.LayerNorm)
-        self.proj = nn.Linear(dim, vocab_sz)
+                                       prenorm=prenorm, attn_bias=attn_bias, final_norm=nn.LayerNorm,
+                                       full_attn=full_attn)
+        self.proj = nn.Linear(d_model, vocab_sz)
         if tie_weights: self.proj.weight = self.emb.emb.weight
         
     def forward(self, x, mask=None):
         x = self.emb(x)
         x = self.tfmr(x, mask=mask)
         return self.proj(x)
+    
     #TODO maybe refactor
     @torch.no_grad()
     def generate(self, inp,
@@ -567,7 +600,7 @@ class ReformerLM(nn.Module):
 
     # def store_attention(self, layer_ids=None):
     #     #defaults to storing attention for all layers
-    #     layer_ids = default(layer_ids, list(range(self.depth)))
+    #     layer_ids = default(layer_ids, list(range(self.n_layers)))
     #     for module in self.children():
     #         if issubclass(type(module), (TransformerEncoder, TransformerDecoder)):
     #             for i, l in enumerate(module.layers):
