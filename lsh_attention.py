@@ -497,9 +497,9 @@ class ReformerEncoder(Module):
         return x
 
 
-class TransformerLM(Module):
+class ReformerLM(Module):
     """
-    Basic Transformer for language modelling
+    Reformer for language modelling using LSH
     Parameters:
         * vocab_sz: int
         * d_model: int - inner dimension of the model
