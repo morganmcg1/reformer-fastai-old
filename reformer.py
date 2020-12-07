@@ -316,6 +316,33 @@ class ReformerDecoder(nn.Module):
         return torch.stack(x.chunk(2, dim=-1)).mean(dim=0)
 
 class ReformerLM(nn.Module):#, TransformerLM):
+    """
+    Reformer for language modelling
+    Parameters:
+        * vocab_sz: int
+        * d_model: int - inner dimension of the model
+        * n_layers: int (default: 6) 
+        * heads: int (default: 8)
+        * d_ff: int - inner dimension of the pointwise FeedForward net, if None defaults to 4*d_model
+        * attn_dropout: float - attention dropout
+        * ff_dropout: float - feed-forward dropout
+        * emb_dropout: float - embedding dropout
+        * causal: bool (default: True) - if True does causal masking automatically
+        * max_seq_len: int (default: 512)
+        * tie_weights: bool - if True target embedding weights are used for computation output projection
+        * prenorm: bool - wether to use PreNorm or PostNorm
+        * attn_bias: bool - wether to allow biases in attention projection layers
+        * pad_idx: int - padding token id, required for autogeneration of padding mask
+        * pos_enc: str from {'absolute', 'fixed', 'axial'} - type of positional encoding to use
+        * axial_shape: tuple - required if 'axial' positional encoding are used, should be factors of 
+                max_seq_len
+        * axial_emb_dims: tuple - [optional] axial embedding components, should sum to d_model
+    Inputs:
+        * x - input ids, shape [bs, sl]
+        * mask - optional boolean mask, shape [bs, sl]
+    Returns:
+        * logits - target token logits, shape [bs, sl, vocab_sz]
+    """
     def __init__(self,
                  vocab_sz,
                  d_model, 
@@ -362,19 +389,29 @@ class ReformerLM(nn.Module):#, TransformerLM):
 
 class ReformerEncDec(nn.Module):
     """
-    Reformer Encoder-Decoder model [under development]
-    ...
+    Basic Transformer Encoder-Decoder model
     Parameters:
-        * enc_vocab_sz: int - source vocab size 
+        * enc_vocab_sz: int - source vocab size
         * dec_vocab_sz: int - target vocab size
         * d_model: int - inner dimension of the model
-        * depth: int (default: 6) 
+        * n_enc_layers: int (default: 6) 
+        * n_dec_layers: int (default: 6)
         * heads: int (default: 8)
+        * d_ff: int - inner dimension of the FeedForward net, if None defaults to 4*d_model
+        * attn_dropout: float - attention dropout
+        * ff_dropout: float - feed-forward dropout
+        * emb_dropout: float - embedding dropout
         * max_seq_len: int (default: 512)
+        * prenorm: bool - whether to use PreNorm or PostNorm
+        * attn_bias: bool - whether to allow biases in attention projection layers
         * pad_idx: int - padding token id, if pad_idx is provided, and no mask/context_mask are passed to 
                 forward method will be used to generate padding masks
         * tie_weights: bool - if True target embedding weights are used for computation output projection
+        * shared_emb: bool - if True encoder and decoder will use shared embedding layer
         * pos_enc: str from {'absolute', 'fixed', 'axial'} - type of positional encoding to use
+        * axial_shape: tuple - required if 'axial' positional encoding are used, should be factors of 
+                max_seq_len
+        * axial_emb_dims: tuple - [optional] axial embedding components, should sum to d_model
     Inputs:
         * src - source input ids, shape [bs, src_sl]
         * tgt - target input ids, shape [bs, tgt_sl]
