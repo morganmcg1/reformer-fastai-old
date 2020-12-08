@@ -8,6 +8,11 @@ from basic_transformer import *
 # Allow each chunk to attend within itself, and also one chunk back. Chunk
 # boundaries might occur in the middle of a sequence of items from the
 # same bucket, so this increases the chances of attending to relevant items.
+
+# Solution for 'RuntimeError: Expected object of device type cuda but got device type cpu for argument #2 'mat2' in call to _th_bmm_out' from here
+# https://discuss.pytorch.org/t/runtimeerror-expected-object-of-device-type-cuda-but-got-device-type-cpu-for-argument-2-mat1-in-call-to-th-addmm/75690
+# explicity indicate device while using torch.arange and torch.randn
+
 def look_one_back(x):
     x_extra = torch.cat([x[:, -1:, ...], x[:, :-1, ...]], dim=1)
     return torch.cat([x, x_extra], dim=2)
@@ -99,11 +104,13 @@ class LSHAttention(Module):
         # 1. account for the input shapes. vecs = [bs, sl, dim]
         batch_size, seqlen, dim = vecs.shape
         device = vecs.device
+        #print(device)
         rotations_shape = (dim, self.n_hashes, n_buckets // 2)
 
         # 2. Calculate hash bucket id via random rotations, concatenation and argmax 
         # note: we copy rotations accross batch dimension (see exploration notebook for details). 
-        random_rotations = repeat(torch.randn(rotations_shape), 
+		# Imran: added device
+        random_rotations = repeat(torch.randn(rotations_shape,device=device), 
                                   'd nh nb -> bs d nh nb', bs=batch_size)           
         dropped_vecs = self.dropout_for_hash(vecs)
                        
@@ -117,13 +124,15 @@ class LSHAttention(Module):
 
         # 3. Next we add offsets so that bucket numbers from different hashing rounds don't overlap.
         # We also reshape the buckets so that each hash round is concatenated along the -1 dim
-        offsets = torch.arange(self.n_hashes)                              # list of [0,1,2,..n_hashes-1]
+		# Imran: added device
+        offsets = torch.arange(self.n_hashes,device=device)                              # list of [0,1,2,..n_hashes-1]
         offsets = rearrange(offsets * n_buckets, 'nh -> 1 nh 1')        # [1, n_hashes, 1]
         buckets = rearrange(buckets+offsets, 'bs nh sl -> bs (nh sl)')  # [bs, (n_hashes*sl)]
         return buckets
 
     def forward(self, qk, v, input_mask = None, **kwargs):
         batch_size, seqlen, dim, device = *qk.shape, qk.device
+        #print(qk.device)
 
         # caching
         is_reverse = kwargs.pop('_reverse', False)
@@ -141,7 +150,7 @@ class LSHAttention(Module):
         
         # Create an index that reflexts both bucket id and sequence id. This let's us sort qk according 
         # to both simultaneously. Repeated across the batch dimension.
-        ticker = repeat(torch.arange(self.n_hashes * seqlen), 'l -> bs l', bs=batch_size)
+        ticker = repeat(torch.arange((self.n_hashes * seqlen),device=device), 'l -> bs l', bs=batch_size)
         buckets_and_t = seqlen * buckets + (ticker % seqlen) 
         buckets_and_t = buckets_and_t.detach()                # [bs, seqlen*n_hashes]
 
@@ -597,25 +606,3 @@ class ReformerLM(Module):
                 break
         # out = out[:, t:]
         return out
-
-    # def store_attention(self, layer_ids=None):
-    #     #defaults to storing attention for all layers
-    #     layer_ids = default(layer_ids, list(range(self.n_layers)))
-    #     for module in self.children():
-    #         if issubclass(type(module), (TransformerEncoder, TransformerDecoder)):
-    #             for i, l in enumerate(module.layers):
-    #                 if i in layer_ids:
-    #                     for m in l.modules():
-    #                         if issubclass(type(m), (Attention)):
-    #                             m.store_attention = True
-    # def get_attention_matrix(self):
-    #     res = []
-    #     for m in self.modules():
-    #         if issubclass(type(m), (Attention)):
-    #             attention = getattr(m, 'attention', None)
-    #             if attention is not None:
-    #                 res.append(attention)
-    #             # reset stored attention
-    #             m.attention = None
-    #             m.store_attention = False
-    #     return res
