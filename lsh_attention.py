@@ -563,7 +563,7 @@ class ReformerLM(Module):
         self.tfmr = ReformerEncoder(d_model, n_layers, heads, causal=causal, d_ff=d_ff, 
                                        attn_dropout=attn_dropout, ff_dropout=ff_dropout,
                                        prenorm=prenorm, attn_bias=attn_bias, final_norm=nn.LayerNorm,
-                                       full_attn=full_attn)
+                                       full_attn=full_attn, bucket_size=bucket_size)
         self.proj = nn.Linear(d_model, vocab_sz)
         if tie_weights: self.proj.weight = self.emb.emb.weight
         
