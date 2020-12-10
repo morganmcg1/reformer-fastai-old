@@ -43,6 +43,12 @@ Fastai community entry to [2020 Reproducibility Challenge](https://paperswithcod
 - Train Test split: (guess) newstest2013 for validation and newstest2014 for test, in consistence with Vaswani et al. (2017) - from https://arxiv.org/pdf/2009.02070.pdf
 - Tokenizer: [Tensor2Tensor SubWordTextEncoder](https://github.com/tensorflow/tensor2tensor/blob/21dba2c1bdcc7ab582a2bfd8c0885c217963bb4f/tensor2tensor/data_generators/text_encoder.py#L448)
 
+**en-ga**
+- [en-ga.zip, 84.5mb](https://github.com/haws74516/en_ga_ds/raw/main/en_ga.zip)
+
+
+
+
 ### Explainers
 - [Yannic K explainer](https://www.youtube.com/watch?v=i4H0kjxrias&t=1s)
 - [HuggingFace blog post](https://huggingface.co/blog/reformer)
