@@ -1,3 +1,5 @@
+# 🚨 NOTE: OUR WORK HAS NOW MOVED [HERE](https://github.com/arampacha/reformer_fastai) 🚨
+
 # Reformer Reproducibility Experiments
 
 Fastai community entry to [2020 Reproducibility Challenge](https://paperswithcode.com/rc2020)
